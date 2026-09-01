@@ -1,0 +1,109 @@
+services:
+  # 1. PostgreSQL 16 with pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: nitivayu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nitivayu_db
+      POSTGRES_USER: nitivayu_user
+      POSTGRES_PASSWORD: nitivayu_secure_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nitivayu_user -d nitivayu_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Temporal Dev Server & UI
+  temporal:
+    image: temporalio/temporal:latest
+    container_name: nitivayu-temporal
+    restart: unless-stopped
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--port", "7233", "--ui-port", "8233", "--db-filename", "/tmp/temporal.db"]
+    ports:
+      - "7233:7233"   # Temporal gRPC
+      - "8233:8233"   # Temporal Web UI
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 3. FastAPI Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nitivayu-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://nitivayu_user:nitivayu_secure_password@postgres:5432/nitivayu_db
+      - TEMPORAL_HOST=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+      - OPENROUTER_MODEL=google/gemini-2.0-flash-exp:free
+      - LLM_CACHE=1
+      - JWT_SECRET=nitivayu_super_secret_jwt_key_2026
+    ports:
+      - "8000:8000"
+    volumes:
+      - output_data:/app/output
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. Scalable Temporal Python Worker Fleet
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: nitivayu-worker
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://nitivayu_user:nitivayu_secure_password@postgres:5432/nitivayu_db
+      - TEMPORAL_HOST=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+      - OPENROUTER_MODEL=google/gemini-2.0-flash-exp:free
+      - LLM_CACHE=1
+      - SENTENCE_TRANSFORMERS_HOME=/root/.cache/torch/sentence_transformers
+    volumes:
+      - output_data:/app/output
+      - model_cache:/root/.cache/torch/sentence_transformers
+
+  # 5. React + Vite Frontend (Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nitivayu-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:
+  output_data:
+  model_cache:

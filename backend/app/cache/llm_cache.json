@@ -1,0 +1,37 @@
+{
+  "hash1": {
+    "title": "Water Contamination Issue",
+    "summary": "Reports indicate severe water contamination in the river due to industrial discharge.",
+    "category": "Water Pollution",
+    "severity": "High",
+    "location_hint": "Riverside industrial zone"
+  },
+  "hash2": {
+    "title": "Industrial Pollution Violation",
+    "summary": "Factory emissions exceeding regulatory limits observed near the residential area.",
+    "category": "Air Pollution",
+    "severity": "Critical",
+    "location_hint": "North industrial park"
+  },
+  "hash3": {
+    "title": "Coal Mining Dust Control",
+    "summary": "Excessive dust generated from open-cast coal mining affecting local air quality.",
+    "category": "Air Pollution",
+    "severity": "High",
+    "location_hint": "Eastern mining sector"
+  },
+  "hash4": {
+    "title": "Tribal Handicrafts Support Request",
+    "summary": "Local tribal artisans facing difficulties in procuring raw materials and accessing markets.",
+    "category": "Economic Development",
+    "severity": "Medium",
+    "location_hint": "Western tribal settlements"
+  },
+  "hash5": {
+    "title": "Tribal Education Access Deficit",
+    "summary": "Lack of proper school infrastructure and teachers in tribal villages.",
+    "category": "Education",
+    "severity": "High",
+    "location_hint": "Southern forest fringe villages"
+  }
+}
