@@ -168,3 +168,9 @@ VALUES
   ('Birla Institute of Technology, Mesra', 'BIT_MESRA', 'Ranchi', 23.4123, 85.4399, ARRAY['Infrastructure', 'Water', 'Environment'], 15, 'iic@bitmesra.ac.in'),
   ('National Institute of Technology, Jamshedpur', 'NIT_JSR', 'East Singhbhum', 22.7766, 86.1444, ARRAY['Infrastructure', 'Industry', 'IoT'], 12, 'iic@nitjsr.ac.in')
 ON CONFLICT (short_code) DO NOTHING;
+
+-- Demo industry workspace used by the CSR portal's scoped login and pledges.
+INSERT INTO industries (name, sector, csr_focus_areas, csr_budget_inr, contact_person, contact_email)
+VALUES
+  ('Nitivayu CSR Foundation', 'Civic Innovation', ARRAY['Infrastructure', 'Water', 'Environment'], 10000000, 'CSR Desk', 'csr@nitivayu.example')
+ON CONFLICT DO NOTHING;

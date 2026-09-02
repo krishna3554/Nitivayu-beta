@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import create_access_token, get_current_user, get_db, require_role
-from app.db.models import AuditLog, FundingLink, Problem, RouteAssignment, Submission, University
+from app.db.models import AuditLog, FundingLink, Industry, Problem, ProjectTeam, RouteAssignment, Submission, University
 from app.services.outputs import append_audit, write_triage_csv
 from app.config import get_settings
 from temporalio.client import Client
@@ -80,6 +80,15 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         if university is None:
             raise HTTPException(status_code=503, detail="No university workspace is configured")
         organization_id = str(university.university_id)
+    elif role == "industry":
+        industry = (await db.execute(
+            select(Industry).where(Industry.contact_email == email)
+        )).scalars().first()
+        if industry is None:
+            industry = (await db.execute(select(Industry).order_by(Industry.name).limit(1))).scalars().first()
+        if industry is None:
+            raise HTTPException(status_code=503, detail="No industry workspace is configured")
+        organization_id = str(industry.industry_id)
     token = create_access_token({"sub": email, "role": role, "organization_id": organization_id})
     return {"access_token": token, "token_type": "bearer", "role": role}
 
@@ -106,8 +115,7 @@ async def create_submission(
         status="PENDING_TRIAGE",
     )
     db.add(submission)
-    await db.commit()
-    await db.refresh(submission)
+    await db.flush()
     category, severity = classify_issue(raw_text)
     problem = Problem(submission_id=submission.submission_id, title=raw_text[:120], summary=raw_text, category=category, severity_score=severity, status="PENDING_OFFICER_REVIEW")
     db.add(problem)
@@ -175,11 +183,14 @@ async def decide_problem(problem_id: str, payload: DecisionRequest, db: AsyncSes
     problem = await db.get(Problem, problem_id)
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
+    if problem.status != "PENDING_OFFICER_REVIEW":
+        raise HTTPException(status_code=409, detail="This problem has already been reviewed")
     if payload.decision == "OVERRIDE" and not payload.override_university_id:
         raise HTTPException(status_code=400, detail="An override university is required")
     problem.status = "ROUTED" if payload.decision != "REJECT" else "REJECTED"
     assignment_result = await db.execute(select(RouteAssignment).where(RouteAssignment.problem_id == problem.problem_id))
-    assignment = assignment_result.scalars().first()
+    assignments = assignment_result.scalars().all()
+    assignment = assignments[0] if assignments else None
     if payload.decision == "OVERRIDE":
         university = await db.get(University, payload.override_university_id)
         if not university:
@@ -198,6 +209,12 @@ async def decide_problem(problem_id: str, payload: DecisionRequest, db: AsyncSes
             db.add(assignment)
     if assignment:
         assignment.status = "OFFERED" if payload.decision != "REJECT" else "CANCELLED"
+    if payload.decision == "REJECT":
+        for route_assignment in assignments:
+            route_assignment.status = "CANCELLED"
+    submission = await db.get(Submission, problem.submission_id)
+    if submission:
+        submission.status = "ROUTED" if payload.decision != "REJECT" else "REJECTED"
     db.add(AuditLog(entity_type="problem", entity_id=str(problem.problem_id), action=f"OFFICER_{payload.decision}", actor_id=user["user_id"], actor_role=user["role"], after_snapshot={"status": problem.status, "comments": payload.comments}))
     await db.commit()
     append_audit({"entity_type": "problem", "entity_id": str(problem.problem_id), "action": f"OFFICER_{payload.decision}", "actor_id": user["user_id"], "actor_role": user["role"]})
@@ -251,7 +268,7 @@ async def respond_assignment(assignment_id: str, payload: AssignmentResponse, db
 
 
 @api_router.get("/industry/opportunities")
-async def csr_opportunities(db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
+async def csr_opportunities(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("industry"))):
     result = await db.execute(select(Problem).where(Problem.status == "ROUTED").limit(50))
     return [{"problem_id": str(p.problem_id), "title": p.title, "description": p.summary, "category": p.category, "match_score": p.confidence_score or 0.0} for p in result.scalars().all()]
 
@@ -260,9 +277,24 @@ async def csr_opportunities(db: AsyncSession = Depends(get_db), user: dict = Dep
 async def create_pledge(payload: PledgeRequest, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("industry"))):
     if payload.pledged_amount_inr <= 0:
         raise HTTPException(status_code=422, detail="Pledge amount must be greater than zero")
-    if not await db.get(Problem, payload.problem_id):
+    if not user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="Industry account is not linked to a workspace")
+    problem = await db.get(Problem, payload.problem_id)
+    if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
-    pledge = FundingLink(problem_id=payload.problem_id, team_id=payload.team_id, pledged_amount_inr=payload.pledged_amount_inr, status="PLEDGED")
+    if problem.status != "ROUTED":
+        raise HTTPException(status_code=409, detail="Only routed problems can receive pledges")
+    if payload.team_id:
+        team = await db.get(ProjectTeam, payload.team_id)
+        if not team or team.problem_id != problem.problem_id:
+            raise HTTPException(status_code=422, detail="Team must belong to the pledged problem")
+    pledge = FundingLink(
+        problem_id=problem.problem_id,
+        team_id=payload.team_id,
+        industry_id=user["organization_id"],
+        pledged_amount_inr=payload.pledged_amount_inr,
+        status="PLEDGED",
+    )
     db.add(pledge)
     await db.commit()
     await db.refresh(pledge)

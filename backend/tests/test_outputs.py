@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from app.services import outputs
+from app.api.router import classify_issue
 
 
 def test_triage_export_has_specified_headers(tmp_path, monkeypatch):
@@ -15,3 +16,7 @@ def test_audit_log_is_append_only(tmp_path, monkeypatch):
     outputs.append_audit({"action": "CREATED"})
     outputs.append_audit({"action": "APPROVED"})
     assert len(list((tmp_path / "audit").glob("*.jsonl"))[0].read_text().splitlines()) == 2
+
+
+def test_classification_is_case_insensitive_and_assigns_urgent_severity():
+    assert classify_issue("URGENT water flood near the market") == ("water", 4)
