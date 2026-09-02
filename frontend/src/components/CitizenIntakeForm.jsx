@@ -7,6 +7,8 @@ export default function CitizenIntakeForm() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [successToken, setSuccessToken] = useState(null);
+  const [error, setError] = useState('');
+  const [photo, setPhoto] = useState(null);
   const [formData, setFormData] = useState({
     description: '',
     language: 'english',
@@ -19,16 +21,19 @@ export default function CitizenIntakeForm() {
     if (!formData.description.trim()) return;
     
     setLoading(true);
+    setError('');
     try {
       const payload = new FormData();
       payload.append('raw_text', formData.description);
       payload.append('language_pref', formData.language);
       payload.append('district', formData.district);
       payload.append('block', formData.block);
+      if (photo) payload.append('photo', photo);
       const res = await submitComplaint(payload);
       setSuccessToken(res.data.tracking_token);
     } catch (err) {
-      console.error(err);
+      setError(err.response?.data?.detail || 'We could not submit your issue. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
@@ -127,11 +132,14 @@ export default function CitizenIntakeForm() {
           </div>
         </div>
 
-        <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer">
+        <label className="block border-2 border-dashed border-slate-300 rounded-lg p-6 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer">
+          <input type="file" accept="image/*" className="sr-only" onChange={(event) => setPhoto(event.target.files?.[0] || null)} />
           <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
           <p className="text-sm font-medium text-zinc-700">Upload Photo (Optional)</p>
-          <p className="text-xs text-slate-500 mt-1">Drag and drop or click to select</p>
-        </div>
+          <p className="text-xs text-slate-500 mt-1">{photo ? photo.name : 'Click to select an image'}</p>
+        </label>
+
+        {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
         <button
           type="submit"

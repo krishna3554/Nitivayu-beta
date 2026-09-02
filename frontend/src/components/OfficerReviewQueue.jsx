@@ -11,6 +11,15 @@ export default function OfficerReviewQueue() {
   useEffect(() => { loadQueue(); }, []);
   const visibleQueue = useMemo(() => queue.filter(item => `${item.id} ${item.title} ${item.district}`.toLowerCase().includes(search.toLowerCase())), [queue, search]);
   const decide = async (id, decision) => { try { await decideComplaint(id, { decision }); await loadQueue(); } catch (error) { alert(error.response?.data?.detail || 'Unable to save decision.'); } };
+  const bulkApprove = async () => {
+    try {
+      await Promise.all([...selectedRows].map((id) => decideComplaint(id, { decision: 'APPROVE' })));
+      setSelectedRows(new Set());
+      await loadQueue();
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Unable to approve all selected issues.');
+    }
+  };
 
   const toggleRow = (id) => {
     const newSet = new Set(selectedRows);
@@ -76,7 +85,7 @@ export default function OfficerReviewQueue() {
         {selectedRows.size > 0 && (
           <div className="flex items-center gap-3 bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-100">
             <span className="text-sm font-semibold text-indigo-700">{selectedRows.size} selected</span>
-            <button className="text-sm font-medium px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">Bulk Approve</button>
+            <button onClick={bulkApprove} className="text-sm font-medium px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">Bulk Approve</button>
           </div>
         )}
       </div>
@@ -131,11 +140,11 @@ export default function OfficerReviewQueue() {
                   </td>
                   <td className="p-3 text-right pr-4">
                     <div className="flex items-center justify-end gap-2">
-                      <button className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded border border-transparent hover:border-emerald-200 transition-colors" title="Approve & Route">
-                        <Check onClick={() => decide(row.id, 'APPROVE')} className="w-4 h-4" />
+                      <button onClick={() => decide(row.id, 'APPROVE')} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded border border-transparent hover:border-emerald-200 transition-colors" title="Approve & Route">
+                        <Check className="w-4 h-4" />
                       </button>
-                      <button className="p-1.5 text-rose-600 hover:bg-rose-50 rounded border border-transparent hover:border-rose-200 transition-colors" title="Reject">
-                        <X onClick={() => decide(row.id, 'REJECT')} className="w-4 h-4" />
+                      <button onClick={() => decide(row.id, 'REJECT')} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded border border-transparent hover:border-rose-200 transition-colors" title="Reject">
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
