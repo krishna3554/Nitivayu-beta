@@ -55,7 +55,7 @@ def classify_issue(text: str) -> tuple[str, int]:
 
 
 @api_router.post("/auth/login")
-async def login(payload: LoginRequest):
+async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Demo identity provider that returns a signed token for each portal role."""
     if not payload.password:
         raise HTTPException(status_code=400, detail="Password is required")
@@ -67,7 +67,20 @@ async def login(payload: LoginRequest):
         role = "university"
     elif any(marker in email for marker in ("csr", "industry", "tata")):
         role = "industry"
-    token = create_access_token({"sub": email, "role": role, "organization_id": None})
+    # Portal data must be scoped to the signed-in university.  The previous
+    # implementation issued every university user an unscoped token, which
+    # made the inbox either empty or expose offers for every institution.
+    organization_id = None
+    if role == "university":
+        university = (await db.execute(
+            select(University).where(University.nodal_contact_email == email)
+        )).scalars().first()
+        if university is None:
+            university = (await db.execute(select(University).order_by(University.name).limit(1))).scalars().first()
+        if university is None:
+            raise HTTPException(status_code=503, detail="No university workspace is configured")
+        organization_id = str(university.university_id)
+    token = create_access_token({"sub": email, "role": role, "organization_id": organization_id})
     return {"access_token": token, "token_type": "bearer", "role": role}
 
 
@@ -80,6 +93,9 @@ async def create_submission(
     photo: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):
+    raw_text = raw_text.strip()
+    if not raw_text:
+        raise HTTPException(status_code=422, detail="Issue description cannot be blank")
     tracking_token = f"NITIVAYU-{datetime.now().year}-JH-{uuid.uuid4().hex[:6].upper()}"
     submission = Submission(
         raw_text=raw_text,
@@ -118,12 +134,20 @@ async def track_submission(tracking_token: str, db: AsyncSession = Depends(get_d
         raise HTTPException(status_code=404, detail="Submission not found")
     problem_result = await db.execute(select(Problem).where(Problem.submission_id == submission.submission_id))
     problem = problem_result.scalars().first()
+    assignment = None
+    if problem:
+        assignment_result = await db.execute(
+            select(RouteAssignment).options(selectinload(RouteAssignment.university)).where(
+                RouteAssignment.problem_id == problem.problem_id
+            ).order_by(RouteAssignment.rank_order)
+        )
+        assignment = assignment_result.scalars().first()
     return {
         "tracking_token": submission.tracking_token,
         "status": submission.status if not problem else problem.status,
         "category": problem.category if problem else None,
         "severity": str(problem.severity_score) if problem and problem.severity_score else None,
-        "matched_university": None,
+        "matched_university": assignment.university.name if assignment else None,
         "milestones": [],
     }
 
@@ -151,9 +175,27 @@ async def decide_problem(problem_id: str, payload: DecisionRequest, db: AsyncSes
     problem = await db.get(Problem, problem_id)
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
+    if payload.decision == "OVERRIDE" and not payload.override_university_id:
+        raise HTTPException(status_code=400, detail="An override university is required")
     problem.status = "ROUTED" if payload.decision != "REJECT" else "REJECTED"
     assignment_result = await db.execute(select(RouteAssignment).where(RouteAssignment.problem_id == problem.problem_id))
     assignment = assignment_result.scalars().first()
+    if payload.decision == "OVERRIDE":
+        university = await db.get(University, payload.override_university_id)
+        if not university:
+            raise HTTPException(status_code=404, detail="Override university not found")
+        if assignment:
+            assignment.university_id = university.university_id
+        else:
+            assignment = RouteAssignment(
+                problem_id=problem.problem_id,
+                university_id=university.university_id,
+                rank_order=1,
+                match_score=1.0,
+                score_breakdown={"officer_override": 1.0},
+                sla_deadline=datetime.now(timezone.utc) + timedelta(days=7),
+            )
+            db.add(assignment)
     if assignment:
         assignment.status = "OFFERED" if payload.decision != "REJECT" else "CANCELLED"
     db.add(AuditLog(entity_type="problem", entity_id=str(problem.problem_id), action=f"OFFICER_{payload.decision}", actor_id=user["user_id"], actor_role=user["role"], after_snapshot={"status": problem.status, "comments": payload.comments}))
@@ -175,7 +217,15 @@ async def trigger_batch(payload: BatchRequest, user: dict = Depends(require_role
 
 @api_router.get("/university/inbox")
 async def university_inbox(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("university"))):
-    result = await db.execute(select(RouteAssignment).options(selectinload(RouteAssignment.problem)).where(RouteAssignment.status == "OFFERED"))
+    university_id = user.get("organization_id")
+    if not university_id:
+        raise HTTPException(status_code=403, detail="University account is not linked to a workspace")
+    result = await db.execute(
+        select(RouteAssignment).options(selectinload(RouteAssignment.problem)).where(
+            RouteAssignment.status == "OFFERED",
+            RouteAssignment.university_id == university_id,
+        )
+    )
     return [{"assignment_id": str(item.assignment_id), "problem_id": str(item.problem_id), "problem_title": item.problem.title, "match_score": item.match_score, "status": item.status} for item in result.scalars().all()]
 
 
@@ -186,7 +236,16 @@ async def respond_assignment(assignment_id: str, payload: AssignmentResponse, db
     assignment = await db.get(RouteAssignment, assignment_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    if str(assignment.university_id) != user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="This assignment belongs to another university")
+    if assignment.status != "OFFERED":
+        raise HTTPException(status_code=409, detail="This assignment has already been answered")
     assignment.status = "ACCEPTED" if payload.response == "ACCEPT" else "DECLINED"
+    assignment.responded_at = datetime.now(timezone.utc)
+    if payload.response == "ACCEPT":
+        problem = await db.get(Problem, assignment.problem_id)
+        if problem:
+            problem.status = "ACCEPTED"
     await db.commit()
     return {"status": "success"}
 
@@ -199,6 +258,10 @@ async def csr_opportunities(db: AsyncSession = Depends(get_db), user: dict = Dep
 
 @api_router.post("/industry/pledges", status_code=status.HTTP_201_CREATED)
 async def create_pledge(payload: PledgeRequest, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("industry"))):
+    if payload.pledged_amount_inr <= 0:
+        raise HTTPException(status_code=422, detail="Pledge amount must be greater than zero")
+    if not await db.get(Problem, payload.problem_id):
+        raise HTTPException(status_code=404, detail="Problem not found")
     pledge = FundingLink(problem_id=payload.problem_id, team_id=payload.team_id, pledged_amount_inr=payload.pledged_amount_inr, status="PLEDGED")
     db.add(pledge)
     await db.commit()
