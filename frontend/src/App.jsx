@@ -9,6 +9,7 @@ import UniversityPortal from './components/UniversityPortal';
 import CSRFundingPortal from './components/CSRFundingPortal';
 import ScalabilityDashboard from './components/ScalabilityDashboard';
 import Login from './components/Login';
+import LandingPage from './components/LandingPage';
 
 function Navbar() {
   return (
@@ -45,7 +46,8 @@ function App() {
       <Navbar />
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<CitizenIntakeForm />} />
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/report" element={<CitizenIntakeForm />} />
           <Route path="/track/:token" element={<LiveTrackingCard />} />
           <Route path="/officer" element={<OfficerReviewQueue />} />
           <Route path="/officer/batch" element={<BatchTriageControl />} />

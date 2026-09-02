@@ -23,6 +23,7 @@ CREATE TABLE submissions (
     geo_district VARCHAR(100),
     geo_block VARCHAR(100),
     batch_id VARCHAR(100),
+    tracking_token VARCHAR(64) UNIQUE,
     status VARCHAR(50) DEFAULT 'INGESTED', -- INGESTED, TRIAGING, OFFICER_REVIEW, ROUTED, REJECTED, MERGED, COMPLETED
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -160,3 +161,10 @@ CREATE INDEX idx_universities_vector ON universities USING ivfflat (capability_e
 CREATE INDEX idx_problems_status ON problems(status);
 CREATE INDEX idx_submissions_district ON submissions(geo_district);
 CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+
+-- Minimum university network needed for routing in a fresh local deployment.
+INSERT INTO universities (name, short_code, district, geo_lat, geo_lng, domain_specializations, active_capacity, nodal_contact_email)
+VALUES
+  ('Birla Institute of Technology, Mesra', 'BIT_MESRA', 'Ranchi', 23.4123, 85.4399, ARRAY['Infrastructure', 'Water', 'Environment'], 15, 'iic@bitmesra.ac.in'),
+  ('National Institute of Technology, Jamshedpur', 'NIT_JSR', 'East Singhbhum', 22.7766, 86.1444, ARRAY['Infrastructure', 'Industry', 'IoT'], 12, 'iic@nitjsr.ac.in')
+ON CONFLICT (short_code) DO NOTHING;

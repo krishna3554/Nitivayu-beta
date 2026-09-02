@@ -1,23 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Check, Clock, AlertCircle, RefreshCw, ChevronRight } from 'lucide-react';
+import { getComplaint } from '../services/api';
 
 export default function LiveTrackingCard() {
   const { token } = useParams();
-  const [data, setData] = useState({
-    status: 'Routing', // Submitted, Triaging, Officer Review, Routing, University Working, Completed
-    category: 'Infrastructure',
-    severity: 'High',
-    district: 'Patna',
-    title: 'Severe road damage near Sadar market causing accidents',
-    matchedUniversity: 'IIT Patna',
-    matchScore: 0.92,
-  });
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
   const [lastRefreshed, setLastRefreshed] = useState(new Date().toLocaleTimeString());
 
   useEffect(() => {
+    const loadStatus = async () => {
+      try {
+        const response = await getComplaint(token);
+        setData(response.data);
+        setError('');
+        setLastRefreshed(new Date().toLocaleTimeString());
+      } catch (err) {
+        setError(err.response?.data?.detail || 'We could not find this tracking token.');
+      }
+    };
+    loadStatus();
     const timer = setInterval(() => {
-      setLastRefreshed(new Date().toLocaleTimeString());
+      loadStatus();
     }, 30000);
     return () => clearInterval(timer);
   }, []);
@@ -31,7 +36,8 @@ export default function LiveTrackingCard() {
     { id: 'Completed', label: 'Resolved' }
   ];
 
-  const currentIdx = stages.findIndex(s => s.id === data.status);
+  const statusMap = { PENDING_TRIAGE: 'Triaging', TRIAGING: 'Triaging', PENDING_OFFICER_REVIEW: 'Officer Review', ROUTED: 'Routing', ACCEPTED: 'University Working', COMPLETED: 'Completed', REJECTED: 'Completed' };
+  const currentIdx = stages.findIndex(s => s.id === statusMap[data?.status]);
 
   return (
     <div className="max-w-3xl mx-auto mt-8 px-4">
@@ -47,6 +53,7 @@ export default function LiveTrackingCard() {
         </div>
       </div>
 
+      {error && <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
       {/* Pipeline Visualizer */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
         <h2 className="text-sm font-semibold text-zinc-900 mb-8 uppercase tracking-wide">Live Progress</h2>
@@ -55,7 +62,7 @@ export default function LiveTrackingCard() {
           <div className="absolute top-1/2 left-0 w-full h-1 bg-slate-100 -translate-y-1/2 rounded-full"></div>
           <div 
             className="absolute top-1/2 left-0 h-1 bg-emerald-500 -translate-y-1/2 rounded-full transition-all duration-1000"
-            style={{ width: `${(currentIdx / (stages.length - 1)) * 100}%` }}
+            style={{ width: `${(Math.max(0, currentIdx) / (stages.length - 1)) * 100}%` }}
           ></div>
           
           <div className="relative flex justify-between">
@@ -82,25 +89,24 @@ export default function LiveTrackingCard() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div className="flex gap-3 mb-4">
-            <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-md border border-indigo-100">{data.category}</span>
-            <span className="px-2.5 py-1 bg-rose-50 text-rose-700 text-xs font-semibold rounded-md border border-rose-100 uppercase tracking-wide">Severity: {data.severity}</span>
-            <span className="px-2.5 py-1 bg-slate-100 text-zinc-700 text-xs font-semibold rounded-md border border-slate-200">{data.district}</span>
+            <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-md border border-indigo-100">{data?.category || 'Under review'}</span>
+            <span className="px-2.5 py-1 bg-rose-50 text-rose-700 text-xs font-semibold rounded-md border border-rose-100 uppercase tracking-wide">Severity: {data?.severity || 'Pending'}</span>
           </div>
-          <h2 className="text-xl font-bold text-zinc-900">{data.title}</h2>
+          <h2 className="text-xl font-bold text-zinc-900">Your civic issue is being processed</h2>
         </div>
         
-        {data.status === 'Routing' && (
+        {statusMap[data?.status] === 'Routing' && (
           <div className="bg-emerald-50 p-6 border-b border-emerald-100">
             <h3 className="text-sm font-semibold text-emerald-800 mb-2 flex items-center gap-2">
               <CheckCircle className="w-4 h-4" /> Match Found
             </h3>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-emerald-900 font-bold text-lg">{data.matchedUniversity}</p>
+                <p className="text-emerald-900 font-bold text-lg">{data?.matched_university || 'University partner'}</p>
                 <p className="text-emerald-700 text-sm">Assigned based on civil engineering expertise.</p>
               </div>
               <div className="text-right">
-                <span className="text-2xl font-black text-emerald-600 block">{Math.round(data.matchScore * 100)}%</span>
+                <span className="text-2xl font-black text-emerald-600 block">Matched</span>
                 <span className="text-xs font-medium text-emerald-700 uppercase tracking-wider">Relevance Score</span>
               </div>
             </div>

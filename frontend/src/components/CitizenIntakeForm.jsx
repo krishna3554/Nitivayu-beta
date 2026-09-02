@@ -20,14 +20,13 @@ export default function CitizenIntakeForm() {
     
     setLoading(true);
     try {
-      // Mocking submission for UI or actual API call
-      // const res = await submitComplaint(formData);
-      // setSuccessToken(res.data.token);
-      
-      setTimeout(() => {
-        setSuccessToken('TRK-' + Math.random().toString(36).substring(2, 10).toUpperCase());
-        setLoading(false);
-      }, 1000);
+      const payload = new FormData();
+      payload.append('raw_text', formData.description);
+      payload.append('language_pref', formData.language);
+      payload.append('district', formData.district);
+      payload.append('block', formData.block);
+      const res = await submitComplaint(payload);
+      setSuccessToken(res.data.tracking_token);
     } catch (err) {
       console.error(err);
       setLoading(false);
@@ -44,7 +43,7 @@ export default function CitizenIntakeForm() {
       <div className="max-w-md mx-auto mt-12 p-6 bg-white rounded-xl shadow-sm border border-emerald-100 text-center">
         <CheckCircle2 className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
         <h2 className="text-2xl font-bold text-zinc-900 mb-2">Issue Submitted</h2>
-        <p className="text-zinc-600 mb-6">Your problem is now in our triaging pipeline.</p>
+        <p className="text-zinc-600 mb-6">Your issue is now in our triaging pipeline.</p>
         
         <div className="bg-slate-50 p-4 rounded-lg mb-6 flex items-center justify-between border border-slate-200">
           <span className="font-mono font-bold text-lg text-zinc-900 tracking-wider">{successToken}</span>

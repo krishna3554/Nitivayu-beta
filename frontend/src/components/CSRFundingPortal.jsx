@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { IndianRupee, Heart, MapPin, Building, ArrowRight } from 'lucide-react';
+import { createCsrPledge, getCSRChallenges } from '../services/api';
 
 export default function CSRFundingPortal() {
   const [showPledgeModal, setShowPledgeModal] = useState(false);
   const [selectedChallenge, setSelectedChallenge] = useState(null);
+  const [pledgeAmount, setPledgeAmount] = useState('');
+  const [challenges, setChallenges] = useState([]);
+  React.useEffect(() => { getCSRChallenges().then(({ data }) => setChallenges(data.map(item => ({ id: item.problem_id, title: item.title, category: item.category, district: 'Jharkhand', budget: 'To be scoped', university: 'Pending assignment', progress: 0 })))).catch(console.error); }, []);
 
-  const challenges = [
-    { id: 1, title: 'Solar Powered Water Purifier for 3 Villages', category: 'Water & Sanitation', district: 'Gaya', budget: '₹4.5L', university: 'IIT Patna', progress: 65 },
-    { id: 2, title: 'Smart Traffic Management Pilot', category: 'Smart City', district: 'Patna', budget: '₹12L', university: 'NIT Patna', progress: 10 },
-    { id: 3, title: 'Agri-waste to Fertilizer Converter', category: 'Agriculture', district: 'Muzaffarpur', budget: '₹3L', university: 'RAU Pusa', progress: 0 },
-  ];
+  const submitPledge = async () => { try { await createCsrPledge({ problem_id: selectedChallenge.id, pledged_amount_inr: Number(pledgeAmount) }); setShowPledgeModal(false); setPledgeAmount(''); } catch (error) { alert(error.response?.data?.detail || 'Unable to record pledge.'); } };
 
   return (
     <div className="max-w-7xl mx-auto p-6 mt-6">
@@ -93,13 +93,13 @@ export default function CSRFundingPortal() {
               <label className="block text-sm font-medium text-zinc-900 mb-2">Pledge Amount (₹)</label>
               <div className="relative">
                 <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
-                <input type="number" className="w-full pl-10 pr-4 py-3 text-lg border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" placeholder="100000" />
+                <input value={pledgeAmount} onChange={(event) => setPledgeAmount(event.target.value)} type="number" className="w-full pl-10 pr-4 py-3 text-lg border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" placeholder="100000" />
               </div>
             </div>
             
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowPledgeModal(false)} className="px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
-              <button onClick={() => setShowPledgeModal(false)} className="px-4 py-2 text-sm font-medium bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors">Confirm Pledge</button>
+              <button disabled={!pledgeAmount} onClick={submitPledge} className="px-4 py-2 text-sm font-medium bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors disabled:opacity-50">Confirm Pledge</button>
             </div>
           </div>
         </div>

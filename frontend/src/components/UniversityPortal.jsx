@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Users, FileText, CheckCircle2, ChevronRight, UploadCloud } from 'lucide-react';
+import { getUniversityInbox, respondToAssignment } from '../services/api';
 
 export default function UniversityPortal() {
   const [activeTab, setActiveTab] = useState('inbox');
 
-  const inbox = [
-    { id: 'C-1002', title: 'Severe waterlogging in main market', score: 0.94, district: 'Patna' },
-    { id: 'C-1005', title: 'Bridge structural crack on highway 32', score: 0.98, district: 'Gaya' },
-  ];
+  const [inbox, setInbox] = useState([]);
+  const refreshInbox = () => getUniversityInbox().then(({ data }) => setInbox(data.map(item => ({ id: item.assignment_id, title: item.problem_title, score: item.match_score, district: 'Jharkhand' })))).catch(console.error);
+  React.useEffect(refreshInbox, []);
+  const respond = async (id, response) => { await respondToAssignment(id, { response }); refreshInbox(); };
 
   const projects = [
     { id: 'P-042', title: 'Sadar Market Drainage Redesign', milestone: 1, team: 'Civil Eng Dept (Prof. Sharma)' }
@@ -63,8 +64,8 @@ export default function UniversityPortal() {
                     <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Match Score</p>
                   </div>
                   <div className="flex gap-2">
-                    <button className="px-4 py-2 text-sm font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">Accept</button>
-                    <button className="px-4 py-2 text-sm font-medium border border-slate-300 text-zinc-700 rounded-lg hover:bg-slate-50 transition-colors">Decline</button>
+                    <button onClick={() => respond(item.id, 'ACCEPT')} className="px-4 py-2 text-sm font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">Accept</button>
+                    <button onClick={() => respond(item.id, 'DECLINE')} className="px-4 py-2 text-sm font-medium border border-slate-300 text-zinc-700 rounded-lg hover:bg-slate-50 transition-colors">Decline</button>
                   </div>
                 </div>
               </div>

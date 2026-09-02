@@ -2,10 +2,10 @@ from datetime import timedelta
 from temporalio import workflow
 
 with workflow.unsafe.imports_passed_through():
-    from backend.app.activities.extract import extract_submission_activity
-    from backend.app.activities.classify import classify_and_embed_activity
-    from backend.app.activities.dedup import check_deduplication_activity
-    from backend.app.activities.route import route_to_universities_activity
+    from app.activities.extract import extract_submission_activity
+    from app.activities.classify import classify_and_embed_activity
+    from app.activities.dedup import check_deduplication_activity
+    from app.activities.route import route_to_universities_activity
 
 @workflow.defn
 class ChallengeTriageWorkflow:

@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { Activity, Database, Cpu, Zap, Server } from 'lucide-react';
+import { getDashboardStats } from '../services/api';
 
 export default function ScalabilityDashboard() {
+  const [stats, setStats] = useState(null);
+  useEffect(() => { getDashboardStats().then(({ data }) => setStats(data)).catch(console.error); }, []);
   const throughputData = [
     { time: '10:00', processed: 400, received: 450 },
     { time: '10:05', processed: 300, received: 320 },
@@ -32,7 +35,7 @@ export default function ScalabilityDashboard() {
             <p className="text-sm font-medium text-zinc-500">Temporal Workers</p>
             <Activity className="w-4 h-4 text-indigo-500" />
           </div>
-          <p className="text-3xl font-black text-zinc-900">42<span className="text-lg font-medium text-zinc-400">/50</span></p>
+          <p className="text-3xl font-black text-zinc-900">{stats?.active_workers ?? 0}<span className="text-lg font-medium text-zinc-400"> active</span></p>
           <div className="w-full h-1.5 bg-slate-100 rounded-full mt-3 overflow-hidden">
             <div className="h-full bg-indigo-500 rounded-full" style={{ width: '84%' }}></div>
           </div>
@@ -43,7 +46,7 @@ export default function ScalabilityDashboard() {
             <p className="text-sm font-medium text-zinc-500">OpenRouter API</p>
             <Zap className="w-4 h-4 text-amber-500" />
           </div>
-          <p className="text-3xl font-black text-zinc-900">124<span className="text-lg font-medium text-zinc-400"> req/s</span></p>
+          <p className="text-3xl font-black text-zinc-900">{stats?.triage_throughput ?? 0}<span className="text-lg font-medium text-zinc-400"> /hr</span></p>
           <p className="text-xs text-amber-600 mt-2 font-medium">Latency: ~210ms</p>
         </div>
 

@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { Play, Settings, Calendar, Clock, Download, CheckCircle, AlertCircle } from 'lucide-react';
+import { getBatchStatus, runBatch } from '../services/api';
 
 export default function BatchTriageControl() {
   const [isRunning, setIsRunning] = useState(false);
+  const [schedule, setSchedule] = useState(null);
+  const [message, setMessage] = useState('');
+  React.useEffect(() => { getBatchStatus().then(({ data }) => setSchedule(data)).catch(console.error); }, []);
   
   const history = [
     { id: 'B-004', date: '2023-11-24 02:00', mode: 'Daily', count: 1240, status: 'Success', time: '14m 22s' },
@@ -10,10 +14,11 @@ export default function BatchTriageControl() {
     { id: 'B-002', date: '2023-11-22 02:00', mode: 'Daily', count: 980, status: 'Warning', time: '18m 10s' },
   ];
 
-  const handleRun = () => {
+  const handleRun = async () => {
     if(window.confirm('Are you sure you want to trigger a manual batch run?')) {
       setIsRunning(true);
-      setTimeout(() => setIsRunning(false), 5000);
+      try { const { data } = await runBatch({ cadence_type: schedule?.active_cadence || 'weekly', include_unassigned_only: true }); setMessage(`Batch ${data.batch_workflow_id} is queued.`); } catch (error) { setMessage(error.response?.data?.detail || 'Unable to start batch.'); }
+      finally { setIsRunning(false); }
     }
   };
 
@@ -40,7 +45,7 @@ export default function BatchTriageControl() {
               <p className="text-sm font-medium text-zinc-500 mb-1">Schedule Mode</p>
               <select className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm font-medium text-zinc-900">
                 <option value="continuous">Continuous (Queue-based)</option>
-                <option value="daily" selected>Daily Cron (2:00 AM)</option>
+                <option value="daily" selected={schedule?.active_cadence === 'daily'}>Daily Cron (2:00 AM)</option>
                 <option value="weekly">Weekly Cron</option>
               </select>
             </div>
@@ -50,6 +55,7 @@ export default function BatchTriageControl() {
             </div>
           </div>
         </div>
+      {message && <p className="mb-5 text-sm text-indigo-700">{message}</p>}
 
         <div className="bg-slate-900 rounded-xl shadow-sm border border-slate-800 p-6 text-white flex flex-col justify-center">
           <h3 className="text-sm font-medium text-slate-400 mb-4">Manual Override</h3>

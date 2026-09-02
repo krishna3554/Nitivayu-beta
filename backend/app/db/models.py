@@ -32,6 +32,7 @@ class Submission(Base):
     geo_district: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     geo_block: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     batch_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tracking_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(50), default='INGESTED')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

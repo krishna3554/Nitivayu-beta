@@ -4,9 +4,11 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 from app.config import get_settings
 
-# Import workflows and activities when created
-# from app.workflows import ...
-# from app.activities import ...
+from app.workflows.triage_workflow import ChallengeTriageWorkflow
+from app.activities.extract import extract_submission_activity
+from app.activities.classify import classify_and_embed_activity
+from app.activities.dedup import check_deduplication_activity
+from app.activities.route import route_to_universities_activity
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,9 +24,9 @@ async def main():
     
     worker = Worker(
         client,
-        task_queue="nitivayu-triage-queue",
-        workflows=[], # TODO: Register workflows
-        activities=[], # TODO: Register activities
+        task_queue="triage-queue",
+        workflows=[ChallengeTriageWorkflow],
+        activities=[extract_submission_activity, classify_and_embed_activity, check_deduplication_activity, route_to_universities_activity],
     )
     
     logger.info("Starting Temporal worker...")

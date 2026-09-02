@@ -6,12 +6,8 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from app.config import get_settings
+from app.db.session import get_db
 from temporalio.client import Client
-
-# Note: We need a get_db implementation, assuming sqlalchemy setup will be done later
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    # Placeholder for actual session yield
-    yield None
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
@@ -48,7 +44,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    return {"user_id": user_id, "role": role}
+    return {"user_id": user_id, "role": role, "organization_id": payload.get("organization_id")}
 
 def require_role(*roles):
     async def role_checker(current_user: dict = Depends(get_current_user)):

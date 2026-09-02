@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, ArrowRight } from 'lucide-react';
+import { loginUser } from '../services/api';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -10,24 +11,19 @@ export default function Login() {
     password: ''
   });
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    // Mock login logic
-    setTimeout(() => {
-      localStorage.setItem('nitivayu_token', 'mock-jwt-token');
-      // Simple routing based on email domain to demonstrate roles
-      if (formData.email.includes('admin') || formData.email.includes('officer')) {
-        navigate('/officer');
-      } else if (formData.email.includes('uni')) {
-        navigate('/university');
-      } else if (formData.email.includes('csr')) {
-        navigate('/csr');
-      } else {
-        navigate('/dashboard');
-      }
+    try {
+      const response = await loginUser(formData);
+      localStorage.setItem('nitivayu_token', response.data.access_token);
+      const destinations = { admin: '/officer', officer: '/officer', university: '/university', industry: '/csr' };
+      navigate(destinations[response.data.role] || '/dashboard');
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Unable to sign in. Please try again.');
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (

@@ -1,18 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Filter, Check, X, AlertTriangle, ArrowRight } from 'lucide-react';
+import { decideComplaint, getQueue } from '../services/api';
 
 export default function OfficerReviewQueue() {
   const [selectedRows, setSelectedRows] = useState(new Set());
   
-  // Mock Data
-  const queue = Array.from({ length: 50 }).map((_, i) => ({
-    id: `C-${1000 + i}`,
-    title: i % 3 === 0 ? 'Severe waterlogging in main market' : 'Broken street lights on bypass road',
-    district: i % 2 === 0 ? 'Patna' : 'Gaya',
-    severity: i % 4 === 0 ? 'Critical' : i % 3 === 0 ? 'High' : 'Medium',
-    topMatch: i % 2 === 0 ? 'IIT Patna (0.94)' : 'NIT Patna (0.88)',
-    slaTimer: i % 5 === 0 ? '2h 15m' : '1d 4h',
-  }));
+  const [queue, setQueue] = useState([]);
+  const [search, setSearch] = useState('');
+  const loadQueue = async () => { try { const { data } = await getQueue(); setQueue(data.map(item => ({ ...item, severity: Number(item.severity) >= 4 ? 'High' : 'Medium', topMatch: item.top_matches?.[0]?.university_name || 'Awaiting match', slaTimer: `${item.sla_hours_remaining}h` }))); } catch (error) { console.error(error); } };
+  useEffect(() => { loadQueue(); }, []);
+  const visibleQueue = useMemo(() => queue.filter(item => `${item.id} ${item.title} ${item.district}`.toLowerCase().includes(search.toLowerCase())), [queue, search]);
+  const decide = async (id, decision) => { try { await decideComplaint(id, { decision }); await loadQueue(); } catch (error) { alert(error.response?.data?.detail || 'Unable to save decision.'); } };
 
   const toggleRow = (id) => {
     const newSet = new Set(selectedRows);
@@ -65,6 +63,8 @@ export default function OfficerReviewQueue() {
             <input 
               type="text" 
               placeholder="Search ID, keyword..." 
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
               className="pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 w-64 outline-none"
             />
           </div>
@@ -91,11 +91,11 @@ export default function OfficerReviewQueue() {
                   <input 
                     type="checkbox" 
                     className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                    onChange={(e) => {
-                      if(e.target.checked) setSelectedRows(new Set(queue.map(q => q.id)));
+              onChange={(e) => {
+                      if(e.target.checked) setSelectedRows(new Set(visibleQueue.map(q => q.id)));
                       else setSelectedRows(new Set());
                     }}
-                    checked={selectedRows.size === queue.length && queue.length > 0}
+                    checked={selectedRows.size === visibleQueue.length && visibleQueue.length > 0}
                   />
                 </th>
                 <th className="p-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">ID</th>
@@ -108,7 +108,7 @@ export default function OfficerReviewQueue() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {queue.map((row) => (
+              {visibleQueue.map((row) => (
                 <tr key={row.id} className={`hover:bg-slate-50/80 transition-colors ${selectedRows.has(row.id) ? 'bg-indigo-50/30' : ''}`}>
                   <td className="p-3 text-center">
                     <input 
@@ -132,10 +132,10 @@ export default function OfficerReviewQueue() {
                   <td className="p-3 text-right pr-4">
                     <div className="flex items-center justify-end gap-2">
                       <button className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded border border-transparent hover:border-emerald-200 transition-colors" title="Approve & Route">
-                        <Check className="w-4 h-4" />
+                        <Check onClick={() => decide(row.id, 'APPROVE')} className="w-4 h-4" />
                       </button>
                       <button className="p-1.5 text-rose-600 hover:bg-rose-50 rounded border border-transparent hover:border-rose-200 transition-colors" title="Reject">
-                        <X className="w-4 h-4" />
+                        <X onClick={() => decide(row.id, 'REJECT')} className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
