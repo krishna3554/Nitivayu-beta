@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from jose import JWTError, jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from app.config import get_settings
 from app.db.session import get_db
@@ -21,10 +21,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     settings = get_settings()
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(hours=settings.JWT_EXPIRY_HOURS)
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(hours=settings.JWT_EXPIRY_HOURS))
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
     return encoded_jwt
@@ -49,7 +47,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 def require_role(*roles):
     async def role_checker(current_user: dict = Depends(get_current_user)):
         if current_user.get("role") not in roles:
-            raise HTTPException(status_code=403, detail="Not enough permissions")
+            required = " or ".join(roles)
+            raise HTTPException(
+                status_code=403,
+                detail=f"This portal requires a {required} account; you are signed in as '{current_user.get('role')}'.",
+            )
         return current_user
     return role_checker
 
