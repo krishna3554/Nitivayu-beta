@@ -1,10 +1,12 @@
 """Append-only operational artefacts required by the LokSetu output specification."""
 import csv
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-OUTPUT_ROOT = Path("/app/output")
+# Defaults to the repo-level ./output directory; containers override via OUTPUT_ROOT=/app/output.
+OUTPUT_ROOT = Path(os.getenv("OUTPUT_ROOT", Path(__file__).resolve().parents[3] / "output"))
 
 def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
