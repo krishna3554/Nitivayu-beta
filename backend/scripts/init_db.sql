@@ -165,8 +165,8 @@ CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 -- Minimum university network needed for routing in a fresh local deployment.
 INSERT INTO universities (name, short_code, district, geo_lat, geo_lng, domain_specializations, active_capacity, nodal_contact_email)
 VALUES
-  ('Birla Institute of Technology, Mesra', 'BIT_MESRA', 'Ranchi', 23.4123, 85.4399, ARRAY['Infrastructure', 'Water', 'Environment'], 15, 'iic@bitmesra.ac.in'),
-  ('National Institute of Technology, Jamshedpur', 'NIT_JSR', 'East Singhbhum', 22.7766, 86.1444, ARRAY['Infrastructure', 'Industry', 'IoT'], 12, 'iic@nitjsr.ac.in')
+  ('Birla Institute of Technology (BIT), Mesra', 'BIT_MESRA', 'Ranchi', 23.4123, 85.4399, ARRAY['Infrastructure', 'Water', 'Environment'], 15, 'iic.head@bitmesra.ac.in'),
+  ('National Institute of Technology (NIT), Jamshedpur', 'NIT_JSR', 'East Singhbhum', 22.7766, 86.1444, ARRAY['Infrastructure', 'Industry', 'IoT'], 12, 'iic.coord@nitjsr.ac.in')
 ON CONFLICT (short_code) DO NOTHING;
 
 -- Demo industry workspace used by the CSR portal's scoped login and pledges.
