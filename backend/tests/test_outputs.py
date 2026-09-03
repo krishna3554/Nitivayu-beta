@@ -19,4 +19,8 @@ def test_audit_log_is_append_only(tmp_path, monkeypatch):
 
 
 def test_classification_is_case_insensitive_and_assigns_urgent_severity():
-    assert classify_issue("URGENT water flood near the market") == ("water", 4)
+    assert classify_issue("URGENT water flood near the market") == ("Water", 4)
+
+
+def test_classification_defaults_to_governance():
+    assert classify_issue("pension not released for months") == ("Governance", 3)
