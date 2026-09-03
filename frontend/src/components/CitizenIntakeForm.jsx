@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, MapPin, Loader2, CheckCircle2, Copy } from 'lucide-react';
-import { submitComplaint } from '../services/api';
+import { getErrorMessage, submitComplaint } from '../services/api';
 
 export default function CitizenIntakeForm() {
   const navigate = useNavigate();
@@ -12,9 +12,11 @@ export default function CitizenIntakeForm() {
   const [formData, setFormData] = useState({
     description: '',
     language: 'english',
-    district: 'Patna',
+    district: 'Ranchi',
     block: 'Sadar',
   });
+
+  const districts = ['Ranchi', 'Dhanbad', 'East Singhbhum', 'West Singhbhum', 'Hazaribagh', 'Giridih', 'Bokaro', 'Palamu', 'Garhwa', 'Dumka', 'Deoghar', 'Gumla', 'Khunti', 'Simdega', 'Pakur', 'Lohardaga'];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,15 +34,21 @@ export default function CitizenIntakeForm() {
       const res = await submitComplaint(payload);
       setSuccessToken(res.data.tracking_token);
     } catch (err) {
-      setError(err.response?.data?.detail || 'We could not submit your issue. Please try again.');
+      setError(getErrorMessage(err, 'We could not submit your issue. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
-  const copyToken = () => {
-    navigator.clipboard.writeText(successToken);
-    alert('Token copied!');
+  const [copied, setCopied] = useState(false);
+  const copyToken = async () => {
+    try {
+      await navigator.clipboard.writeText(successToken);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
   };
 
   if (successToken) {
@@ -52,8 +60,8 @@ export default function CitizenIntakeForm() {
         
         <div className="bg-slate-50 p-4 rounded-lg mb-6 flex items-center justify-between border border-slate-200">
           <span className="font-mono font-bold text-lg text-zinc-900 tracking-wider">{successToken}</span>
-          <button onClick={copyToken} className="p-2 text-zinc-500 hover:text-zinc-900 transition-colors">
-            <Copy className="w-5 h-5" />
+          <button onClick={copyToken} className="p-2 text-zinc-500 hover:text-zinc-900 transition-colors" title="Copy token">
+            {copied ? <span className="text-xs font-semibold text-emerald-600">Copied</span> : <Copy className="w-5 h-5" />}
           </button>
         </div>
         
@@ -113,9 +121,7 @@ export default function CitizenIntakeForm() {
               value={formData.district}
               onChange={(e) => setFormData({...formData, district: e.target.value})}
             >
-              <option value="Patna">Patna</option>
-              <option value="Gaya">Gaya</option>
-              <option value="Muzaffarpur">Muzaffarpur</option>
+              {districts.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
           <div>
