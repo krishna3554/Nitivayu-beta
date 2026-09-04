@@ -17,6 +17,8 @@ from temporalio.service import RPCStatusCode
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 api_router = APIRouter()
 
 # Officer decisions use uppercase API values; the triage workflow signal
@@ -48,13 +50,21 @@ class BatchRequest(BaseModel):
 class PledgeRequest(BaseModel):
     problem_id: str
     team_id: str | None = None
-    pledged_amount_inr: float
+    pledged_amount_inr: float = Field(gt=0)
+
+
+def parse_uuid(value: str, label: str = "id") -> uuid.UUID:
+    """Validate path/payload identifiers so malformed values return 422 instead of a 500."""
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=422, detail=f"Invalid {label}: expected a UUID")
 
 
 def classify_issue(text: str) -> tuple[str, int]:
     """Deterministic intake fallback used until the Temporal LLM worker completes enrichment."""
     lowered = text.lower()
-    categories = {"water": ["water", "drain", "flood", "paani"], "Health": ["health", "hospital", "medical"], "Infrastructure": ["road", "bridge", "street", "light"], "Agriculture": ["farm", "crop", "irrigation"], "Environment": ["pollution", "waste", "smoke"]}
+    categories = {"Water": ["water", "drain", "flood", "paani"], "Health": ["health", "hospital", "medical"], "Infrastructure": ["road", "bridge", "street", "light"], "Agriculture": ["farm", "crop", "irrigation"], "Environment": ["pollution", "waste", "smoke"]}
     for category, words in categories.items():
         if any(word in lowered for word in words):
             return category, 4 if any(word in lowered for word in ("urgent", "danger", "flood", "broken")) else 3
@@ -68,36 +78,47 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Password is required")
     email = payload.email.lower()
     role = "citizen"
+    # Prefer exact workspace matches so seeded nodal/contact emails always land
+    # in the right portal; fall back to heuristic markers for ad-hoc demos.
+    matched_university = (await db.execute(
+        select(University).where(func.lower(University.nodal_contact_email) == email)
+    )).scalars().first()
+    matched_industry = None
+    if matched_university is None:
+        matched_industry = (await db.execute(
+            select(Industry).where(func.lower(Industry.contact_email) == email)
+        )).scalars().first()
     if "admin" in email or "officer" in email:
         role = "admin" if "admin" in email else "officer"
-    elif any(marker in email for marker in ("uni", "iit", "nit", "prof")):
+    elif matched_university is not None:
+        role = "university"
+    elif matched_industry is not None:
+        role = "industry"
+    elif any(marker in email for marker in ("uni", "iit", "nit", "prof", "iic", ".ac.in", ".edu")):
         role = "university"
     elif any(marker in email for marker in ("csr", "industry", "tata")):
         role = "industry"
-    # Portal data must be scoped to the signed-in university.  The previous
-    # implementation issued every university user an unscoped token, which
-    # made the inbox either empty or expose offers for every institution.
+    # Portal data must be scoped to the signed-in university/industry workspace.
     organization_id = None
+    organization_name = None
     if role == "university":
-        university = (await db.execute(
-            select(University).where(University.nodal_contact_email == email)
-        )).scalars().first()
+        university = matched_university
         if university is None:
             university = (await db.execute(select(University).order_by(University.name).limit(1))).scalars().first()
         if university is None:
             raise HTTPException(status_code=503, detail="No university workspace is configured")
         organization_id = str(university.university_id)
+        organization_name = university.name
     elif role == "industry":
-        industry = (await db.execute(
-            select(Industry).where(Industry.contact_email == email)
-        )).scalars().first()
+        industry = matched_industry
         if industry is None:
             industry = (await db.execute(select(Industry).order_by(Industry.name).limit(1))).scalars().first()
         if industry is None:
             raise HTTPException(status_code=503, detail="No industry workspace is configured")
         organization_id = str(industry.industry_id)
+        organization_name = industry.name
     token = create_access_token({"sub": email, "role": role, "organization_id": organization_id})
-    return {"access_token": token, "token_type": "bearer", "role": role}
+    return {"access_token": token, "token_type": "bearer", "role": role, "organization_name": organization_name}
 
 
 @api_router.post("/submissions", status_code=status.HTTP_202_ACCEPTED)
@@ -113,12 +134,20 @@ async def create_submission(
     raw_text = raw_text.strip()
     if not raw_text:
         raise HTTPException(status_code=422, detail="Issue description cannot be blank")
+    if len(raw_text) > 5000:
+        raise HTTPException(status_code=422, detail="Issue description is too long (max 5000 characters)")
+    photo_name = None
+    if photo is not None:
+        contents = await photo.read()
+        if len(contents) > get_settings().MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Photo exceeds the maximum allowed size of 5 MB")
+        photo_name = photo.filename
     tracking_token = f"NITIVAYU-{datetime.now().year}-JH-{uuid.uuid4().hex[:6].upper()}"
     submission = Submission(
         raw_text=raw_text,
         geo_district=district,
         geo_block=block,
-        photo_url=photo.filename if photo else None,
+        photo_url=photo_name,
         tracking_token=tracking_token,
         status="PENDING_TRIAGE",
     )
@@ -163,6 +192,8 @@ async def track_submission(tracking_token: str, db: AsyncSession = Depends(get_d
     problem_result = await db.execute(select(Problem).where(Problem.submission_id == submission.submission_id))
     problem = problem_result.scalars().first()
     assignment = None
+    milestones: list[dict] = []
+    activity: list[dict] = []
     if problem:
         assignment_result = await db.execute(
             select(RouteAssignment).options(selectinload(RouteAssignment.university)).where(
@@ -170,13 +201,35 @@ async def track_submission(tracking_token: str, db: AsyncSession = Depends(get_d
             ).order_by(RouteAssignment.rank_order)
         )
         assignment = assignment_result.scalars().first()
+        team = (await db.execute(
+            select(ProjectTeam).where(ProjectTeam.problem_id == problem.problem_id).limit(1)
+        )).scalars().first()
+        if team:
+            milestone_rows = (await db.execute(
+                select(Milestone).where(Milestone.team_id == team.team_id).order_by(Milestone.milestone_num)
+            )).scalars().all()
+            milestones = [
+                {"milestone_id": str(m.milestone_id), "title": m.title, "status": m.status, "due_date": m.due_date.isoformat() if m.due_date else None}
+                for m in milestone_rows
+            ]
+        audit_rows = (await db.execute(
+            select(AuditLog).where(AuditLog.entity_id.in_([str(submission.submission_id), str(problem.problem_id)])).order_by(AuditLog.timestamp.desc()).limit(10)
+        )).scalars().all()
+        activity = [
+            {"action": row.action, "actor_role": row.actor_role, "timestamp": row.timestamp.isoformat() if row.timestamp else None}
+            for row in audit_rows
+        ]
     return {
         "tracking_token": submission.tracking_token,
         "status": submission.status if not problem else problem.status,
+        "title": problem.title if problem else None,
         "category": problem.category if problem else None,
         "severity": str(problem.severity_score) if problem and problem.severity_score else None,
+        "district": submission.geo_district,
+        "submitted_at": submission.created_at.isoformat() if submission.created_at else None,
         "matched_university": assignment.university.name if assignment else None,
-        "milestones": [],
+        "milestones": milestones,
+        "activity": activity,
     }
 
 
@@ -187,20 +240,38 @@ async def review_queue(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_role("officer", "admin")),
 ):
-    result = await db.execute(select(Problem).options(selectinload(Problem.submission)).where(Problem.status == "PENDING_OFFICER_REVIEW").offset(skip).limit(limit))
-    return [{
-        "id": str(problem.problem_id), "title": problem.title, "description": problem.summary,
-        "category": problem.category, "severity": str(problem.severity_score or 1),
-        "district": problem.submission.geo_district if problem.submission else "Unspecified",
-        "status": problem.status, "sla_hours_remaining": 48, "top_matches": [],
-    } for problem in result.scalars().all()]
+    limit = max(1, min(limit, 100))
+    skip = max(0, skip)
+    result = await db.execute(
+        select(Problem).options(
+            selectinload(Problem.submission),
+            selectinload(Problem.route_assignments).selectinload(RouteAssignment.university),
+        ).where(Problem.status == "PENDING_OFFICER_REVIEW").order_by(Problem.created_at.desc()).offset(skip).limit(limit)
+    )
+    now = datetime.now(timezone.utc)
+    items = []
+    for problem in result.scalars().all():
+        assignments = sorted(problem.route_assignments, key=lambda a: a.rank_order)
+        top_matches = [
+            {"university_id": str(a.university_id), "university_name": a.university.name if a.university else None, "match_score": a.match_score}
+            for a in assignments[:3]
+        ]
+        sla_deadline = assignments[0].sla_deadline if assignments else None
+        sla_hours = max(0, int((sla_deadline - now).total_seconds() // 3600)) if sla_deadline else 48
+        items.append({
+            "id": str(problem.problem_id), "title": problem.title, "description": problem.summary,
+            "category": problem.category, "severity": str(problem.severity_score or 1),
+            "district": problem.submission.geo_district if problem.submission else "Unspecified",
+            "status": problem.status, "sla_hours_remaining": sla_hours, "top_matches": top_matches,
+        })
+    return items
 
 
 @api_router.post("/officer/reviews/{problem_id}/decision")
 async def decide_problem(problem_id: str, payload: DecisionRequest, request: Request, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("officer", "admin"))):
     if payload.decision not in {"APPROVE", "REJECT", "OVERRIDE"}:
         raise HTTPException(status_code=400, detail="Decision must be APPROVE, REJECT, or OVERRIDE")
-    problem = await db.get(Problem, problem_id)
+    problem = await db.get(Problem, parse_uuid(problem_id, "problem_id"))
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
     if problem.status != "PENDING_OFFICER_REVIEW":
@@ -212,7 +283,7 @@ async def decide_problem(problem_id: str, payload: DecisionRequest, request: Req
     assignments = assignment_result.scalars().all()
     assignment = assignments[0] if assignments else None
     if payload.decision == "OVERRIDE":
-        university = await db.get(University, payload.override_university_id)
+        university = await db.get(University, parse_uuid(payload.override_university_id, "override_university_id"))
         if not university:
             raise HTTPException(status_code=404, detail="Override university not found")
         if assignment:
@@ -311,25 +382,60 @@ async def trigger_batch(payload: BatchRequest, user: dict = Depends(require_role
     return {"batch_workflow_id": batch_id, "status": "QUEUED", "stream_url": f"/api/v1/admin/triage/batch-jobs/{batch_id}/stream"}
 
 
+@api_router.get("/university/workspace")
+async def university_workspace(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("university"))):
+    university_id = user.get("organization_id")
+    if not university_id:
+        raise HTTPException(status_code=403, detail="University account is not linked to a workspace")
+    university = await db.get(University, parse_uuid(university_id, "organization_id"))
+    if not university:
+        raise HTTPException(status_code=404, detail="University workspace not found")
+    return {
+        "university_id": str(university.university_id),
+        "name": university.name,
+        "short_code": university.short_code,
+        "district": university.district,
+        "domain_specializations": university.domain_specializations or [],
+        "active_capacity": university.active_capacity,
+        "current_load": university.current_load,
+    }
+
+
 @api_router.get("/university/inbox")
 async def university_inbox(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("university"))):
     university_id = user.get("organization_id")
     if not university_id:
         raise HTTPException(status_code=403, detail="University account is not linked to a workspace")
     result = await db.execute(
-        select(RouteAssignment).options(selectinload(RouteAssignment.problem)).where(
+        select(RouteAssignment).options(
+            selectinload(RouteAssignment.problem).selectinload(Problem.submission)
+        ).where(
             RouteAssignment.status == "OFFERED",
             RouteAssignment.university_id == university_id,
-        )
+        ).order_by(RouteAssignment.assigned_at.desc())
     )
-    return [{"assignment_id": str(item.assignment_id), "problem_id": str(item.problem_id), "problem_title": item.problem.title, "match_score": item.match_score, "status": item.status} for item in result.scalars().all()]
+    return [
+        {
+            "assignment_id": str(item.assignment_id),
+            "problem_id": str(item.problem_id),
+            "problem_title": item.problem.title,
+            "summary": item.problem.summary,
+            "category": item.problem.category,
+            "severity": item.problem.severity_score,
+            "district": item.problem.submission.geo_district if item.problem.submission else None,
+            "match_score": item.match_score,
+            "sla_deadline": item.sla_deadline.isoformat() if item.sla_deadline else None,
+            "status": item.status,
+        }
+        for item in result.scalars().all()
+    ]
 
 
 @api_router.post("/university/assignments/{assignment_id}/respond")
 async def respond_assignment(assignment_id: str, payload: AssignmentResponse, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("university"))):
     if payload.response not in {"ACCEPT", "DECLINE"}:
         raise HTTPException(status_code=400, detail="Response must be ACCEPT or DECLINE")
-    assignment = await db.get(RouteAssignment, assignment_id)
+    assignment = await db.get(RouteAssignment, parse_uuid(assignment_id, "assignment_id"))
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     if str(assignment.university_id) != user.get("organization_id"):
@@ -342,48 +448,155 @@ async def respond_assignment(assignment_id: str, payload: AssignmentResponse, db
         problem = await db.get(Problem, assignment.problem_id)
         if problem:
             problem.status = "ACCEPTED"
+        db.add(AuditLog(entity_type="problem", entity_id=str(assignment.problem_id), action="UNIVERSITY_ACCEPT", actor_id=user["user_id"], actor_role=user["role"], after_snapshot={"assignment_id": str(assignment.assignment_id)}))
     await db.commit()
     return {"status": "success"}
 
 
+@api_router.get("/university/projects")
+async def university_projects(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("university"))):
+    university_id = user.get("organization_id")
+    if not university_id:
+        raise HTTPException(status_code=403, detail="University account is not linked to a workspace")
+    result = await db.execute(
+        select(ProjectTeam).options(
+            selectinload(ProjectTeam.problem),
+            selectinload(ProjectTeam.milestones),
+        ).where(ProjectTeam.university_id == university_id).order_by(ProjectTeam.created_at.desc())
+    )
+    projects = []
+    for team in result.scalars().all():
+        milestones = sorted(team.milestones, key=lambda m: m.milestone_num or 0)
+        current = next((m for m in milestones if m.status != "VERIFIED"), None)
+        projects.append({
+            "team_id": str(team.team_id),
+            "problem_id": str(team.problem_id) if team.problem_id else None,
+            "title": team.proposal_title or (team.problem.title if team.problem else "Untitled project"),
+            "faculty_mentor_name": team.faculty_mentor_name,
+            "student_lead_name": team.student_lead_name,
+            "status": team.status,
+            "current_milestone": current.milestone_num if current else 3,
+            "milestones": [
+                {"milestone_id": str(m.milestone_id), "milestone_num": m.milestone_num, "title": m.title, "status": m.status, "due_date": m.due_date.isoformat() if m.due_date else None}
+                for m in milestones
+            ],
+        })
+    return projects
+
+
 @api_router.get("/industry/opportunities")
 async def csr_opportunities(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("industry"))):
-    result = await db.execute(select(Problem).where(Problem.status == "ROUTED").limit(50))
-    return [{"problem_id": str(p.problem_id), "title": p.title, "description": p.summary, "category": p.category, "match_score": p.confidence_score or 0.0} for p in result.scalars().all()]
+    result = await db.execute(
+        select(Problem).options(
+            selectinload(Problem.submission),
+            selectinload(Problem.route_assignments).selectinload(RouteAssignment.university),
+            selectinload(Problem.project_teams),
+        ).where(Problem.status.in_(["ROUTED", "ACCEPTED"])).order_by(Problem.created_at.desc()).limit(50)
+    )
+    problems = result.scalars().all()
+    pledge_rows = (await db.execute(
+        select(FundingLink.problem_id, func.coalesce(func.sum(FundingLink.pledged_amount_inr), 0))
+        .where(FundingLink.problem_id.in_([p.problem_id for p in problems]))
+        .group_by(FundingLink.problem_id)
+    )).all() if problems else []
+    pledged_by_problem = {problem_id: float(total) for problem_id, total in pledge_rows}
+    opportunities = []
+    for p in problems:
+        assignment = next((a for a in p.route_assignments if a.status in ("OFFERED", "ACCEPTED")), None)
+        opportunities.append({
+            "problem_id": str(p.problem_id),
+            "title": p.title,
+            "description": p.summary,
+            "category": p.category,
+            "severity": p.severity_score,
+            "district": p.submission.geo_district if p.submission else None,
+            "university": assignment.university.name if assignment and assignment.university else None,
+            "status": p.status,
+            "pledged_amount_inr": pledged_by_problem.get(p.problem_id, 0.0),
+            "match_score": p.confidence_score or 0.0,
+        })
+    return opportunities
 
 
 @api_router.post("/industry/pledges", status_code=status.HTTP_201_CREATED)
 async def create_pledge(payload: PledgeRequest, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("industry"))):
-    if payload.pledged_amount_inr <= 0:
-        raise HTTPException(status_code=422, detail="Pledge amount must be greater than zero")
     if not user.get("organization_id"):
         raise HTTPException(status_code=403, detail="Industry account is not linked to a workspace")
-    problem = await db.get(Problem, payload.problem_id)
+    problem = await db.get(Problem, parse_uuid(payload.problem_id, "problem_id"))
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
-    if problem.status != "ROUTED":
+    if problem.status not in {"ROUTED", "ACCEPTED"}:
         raise HTTPException(status_code=409, detail="Only routed problems can receive pledges")
+    team_uuid = None
     if payload.team_id:
-        team = await db.get(ProjectTeam, payload.team_id)
+        team_uuid = parse_uuid(payload.team_id, "team_id")
+        team = await db.get(ProjectTeam, team_uuid)
         if not team or team.problem_id != problem.problem_id:
             raise HTTPException(status_code=422, detail="Team must belong to the pledged problem")
     pledge = FundingLink(
         problem_id=problem.problem_id,
-        team_id=payload.team_id,
+        team_id=team_uuid,
         industry_id=user["organization_id"],
         pledged_amount_inr=payload.pledged_amount_inr,
         status="PLEDGED",
     )
     db.add(pledge)
+    db.add(AuditLog(entity_type="problem", entity_id=str(problem.problem_id), action="CSR_PLEDGE", actor_id=user["user_id"], actor_role=user["role"], after_snapshot={"amount_inr": payload.pledged_amount_inr}))
     await db.commit()
     await db.refresh(pledge)
     return {"id": str(pledge.link_id), "problem_id": str(pledge.problem_id), "amount": pledge.pledged_amount_inr, "status": pledge.status}
 
 
+@api_router.get("/industry/pledges")
+async def list_pledges(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("industry"))):
+    if not user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="Industry account is not linked to a workspace")
+    result = await db.execute(
+        select(FundingLink, Problem.title).join(Problem, FundingLink.problem_id == Problem.problem_id, isouter=True)
+        .where(FundingLink.industry_id == user["organization_id"]).order_by(FundingLink.created_at.desc())
+    )
+    pledges = [
+        {"id": str(link.link_id), "problem_id": str(link.problem_id), "problem_title": title, "amount": link.pledged_amount_inr, "status": link.status, "created_at": link.created_at.isoformat() if link.created_at else None}
+        for link, title in result.all()
+    ]
+    return {
+        "pledges": pledges,
+        "total_pledged_inr": sum(p["amount"] or 0 for p in pledges),
+        "projects_funded": len({p["problem_id"] for p in pledges}),
+    }
+
+
 @api_router.get("/analytics/overview")
 async def analytics_overview(db: AsyncSession = Depends(get_db)):
-    submissions = (await db.execute(select(Submission))).scalars().all()
-    return {"total_submissions": len(submissions), "triage_throughput": 0, "sla_compliance_percent": 100.0, "active_workers": 0, "category_distribution": {}, "district_distribution": {}, "severity_distribution": {}}
+    total_submissions = (await db.execute(select(func.count(Submission.submission_id)))).scalar_one()
+    problems = (await db.execute(select(Problem.category, Problem.status, Problem.severity_score, Submission.geo_district).join(Submission, Problem.submission_id == Submission.submission_id, isouter=True))).all()
+    category_distribution: dict[str, int] = {}
+    district_distribution: dict[str, int] = {}
+    severity_distribution: dict[str, int] = {}
+    routed_or_beyond = 0
+    for category, status_value, severity, district in problems:
+        category_distribution[category] = category_distribution.get(category, 0) + 1
+        if district:
+            district_distribution[district] = district_distribution.get(district, 0) + 1
+        if severity:
+            severity_distribution[str(severity)] = severity_distribution.get(str(severity), 0) + 1
+        if status_value in {"ROUTED", "ACCEPTED", "COMPLETED"}:
+            routed_or_beyond += 1
+    total_problems = len(problems)
+    active_universities = (await db.execute(select(func.count(University.university_id)))).scalar_one()
+    total_pledged = (await db.execute(select(func.coalesce(func.sum(FundingLink.pledged_amount_inr), 0)))).scalar_one()
+    return {
+        "total_submissions": total_submissions,
+        "total_problems": total_problems,
+        "triage_throughput": total_problems,
+        "sla_compliance_percent": round(100.0 * routed_or_beyond / total_problems, 1) if total_problems else 100.0,
+        "active_workers": active_universities,
+        "total_pledged_inr": float(total_pledged or 0),
+        "category_distribution": category_distribution,
+        "district_distribution": district_distribution,
+        "severity_distribution": severity_distribution,
+    }
+
 
 @api_router.post("/admin/reports/triage")
 async def export_triage_report(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("admin", "officer"))):

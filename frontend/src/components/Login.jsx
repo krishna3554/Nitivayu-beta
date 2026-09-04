@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, ArrowRight } from 'lucide-react';
-import { loginUser } from '../services/api';
+import { getErrorMessage, loginUser } from '../services/api';
 
 export default function Login() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -14,13 +15,14 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
     try {
       const response = await loginUser(formData);
       localStorage.setItem('nitivayu_token', response.data.access_token);
       const destinations = { admin: '/officer', officer: '/officer', university: '/university', industry: '/csr' };
       navigate(destinations[response.data.role] || '/dashboard');
-    } catch (error) {
-      alert(error.response?.data?.detail || 'Unable to sign in. Please try again.');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Unable to sign in. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -68,7 +70,9 @@ export default function Login() {
             </div>
           </div>
 
-          <button 
+          {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+
+          <button
             type="submit"
             disabled={loading}
             className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
@@ -82,11 +86,11 @@ export default function Login() {
         </form>
 
         <div className="mt-8 pt-6 border-t border-slate-100 text-xs text-zinc-500 flex justify-between">
-          <p>Mock Accounts:</p>
+          <p>Demo Accounts (any password):</p>
           <div className="text-right space-y-1">
             <p>officer@nitivayu.gov.in</p>
-            <p>prof@iitp.ac.in</p>
-            <p>csr@tata.com</p>
+            <p>iic.head@bitmesra.ac.in</p>
+            <p>csr@tatasteel.com</p>
           </div>
         </div>
       </div>
