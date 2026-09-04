@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     OPENROUTER_MODEL: str = "nvidia/nemotron-3-ultra-550b-a55b"
     LLM_CACHE: bool = True
+    EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    DEDUP_SIMILARITY_THRESHOLD: float = 0.92
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_HOURS: int = 24
