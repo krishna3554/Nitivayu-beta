@@ -1,21 +1,28 @@
 """HTTP API contract consumed by the Nitivayu web application."""
 
 from datetime import datetime, timedelta, timezone
+import logging
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import create_access_token, get_current_user, get_db, require_role
+from app.api.deps import create_access_token, get_current_user, get_db, get_temporal_client, require_role
 from app.db.models import AuditLog, FundingLink, Industry, Problem, ProjectTeam, RouteAssignment, Submission, University
 from app.services.outputs import append_audit, write_triage_csv
-from app.config import get_settings
-from temporalio.client import Client
+from temporalio.service import RPCStatusCode
+
+logger = logging.getLogger(__name__)
 
 api_router = APIRouter()
+
+# Officer decisions use uppercase API values; the triage workflow signal
+# contract uses lowercase values. OVERRIDE still routes the problem onward.
+WORKFLOW_DECISION_SIGNALS = {"APPROVE": "approve", "REJECT": "reject", "OVERRIDE": "approve"}
+OFFICER_SIGNAL_NAME = "officer_approval_signal"
 
 
 class LoginRequest(BaseModel):
@@ -95,6 +102,7 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 @api_router.post("/submissions", status_code=status.HTTP_202_ACCEPTED)
 async def create_submission(
+    request: Request,
     raw_text: str = Form(...),
     language_pref: str = Form("english"),
     district: str | None = Form(None),
@@ -126,11 +134,23 @@ async def create_submission(
     db.add(AuditLog(entity_type="submission", entity_id=str(submission.submission_id), action="SUBMITTED", actor_id="citizen", actor_role="citizen", after_snapshot={"status": submission.status}))
     await db.commit()
     append_audit({"entity_type": "submission", "entity_id": str(submission.submission_id), "action": "SUBMITTED", "actor_role": "citizen"})
+    workflow_id = f"triage-{submission.submission_id}"
     try:
-        client = await Client.connect(get_settings().TEMPORAL_HOST, namespace=get_settings().TEMPORAL_NAMESPACE)
-        await client.start_workflow("ChallengeTriageWorkflow", str(submission.submission_id), raw_text, district or "Unknown", id=f"triage-{submission.submission_id}", task_queue="triage-queue")
+        client = await get_temporal_client(request)
+        await client.start_workflow(
+            "ChallengeTriageWorkflow",
+            args=[
+                str(submission.submission_id),
+                raw_text,
+                district or "Unknown",
+            ],
+            id=workflow_id,
+            task_queue="triage-queue",
+        )
+        problem.temporal_workflow_id = workflow_id
+        await db.commit()
     except Exception:
-        pass
+        logger.warning("Temporal workflow start failed for submission %s; intake fallback retained", submission.submission_id, exc_info=True)
     return {"submission_id": str(submission.submission_id), "tracking_token": tracking_token, "status": submission.status}
 
 
@@ -177,7 +197,7 @@ async def review_queue(
 
 
 @api_router.post("/officer/reviews/{problem_id}/decision")
-async def decide_problem(problem_id: str, payload: DecisionRequest, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("officer", "admin"))):
+async def decide_problem(problem_id: str, payload: DecisionRequest, request: Request, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("officer", "admin"))):
     if payload.decision not in {"APPROVE", "REJECT", "OVERRIDE"}:
         raise HTTPException(status_code=400, detail="Decision must be APPROVE, REJECT, or OVERRIDE")
     problem = await db.get(Problem, problem_id)
@@ -218,7 +238,66 @@ async def decide_problem(problem_id: str, payload: DecisionRequest, db: AsyncSes
     db.add(AuditLog(entity_type="problem", entity_id=str(problem.problem_id), action=f"OFFICER_{payload.decision}", actor_id=user["user_id"], actor_role=user["role"], after_snapshot={"status": problem.status, "comments": payload.comments}))
     await db.commit()
     append_audit({"entity_type": "problem", "entity_id": str(problem.problem_id), "action": f"OFFICER_{payload.decision}", "actor_id": user["user_id"], "actor_role": user["role"]})
+    # The database decision is authoritative; also release any running triage
+    # workflow waiting on the officer signal. Signal failures must not undo the
+    # recorded decision (e.g. workflow already completed or Temporal is down).
+    if problem.temporal_workflow_id:
+        try:
+            client = await get_temporal_client(request)
+            handle = client.get_workflow_handle(problem.temporal_workflow_id)
+            await handle.signal(OFFICER_SIGNAL_NAME, WORKFLOW_DECISION_SIGNALS[payload.decision])
+        except Exception:
+            logger.warning("Officer signal failed for workflow %s", problem.temporal_workflow_id, exc_info=True)
     return {"status": "success", "message": "Decision recorded"}
+
+
+class WorkflowSignalRequest(BaseModel):
+    decision: str
+
+
+class WorkflowSignalResponse(BaseModel):
+    status: str
+    workflow_id: str
+    signal: str
+
+
+def _signal_error_status(exc: Exception) -> int | None:
+    # temporalio.service.RPCError exposes `.status`; the underlying
+    # temporal_sdk_bridge.RPCError exposes `.code`. NOT_FOUND (5) means the
+    # workflow is gone or already completed.
+    for attribute in ("status", "status_code", "code"):
+        status_code = getattr(exc, attribute, None)
+        if status_code is None:
+            continue
+        try:
+            if int(status_code) == int(RPCStatusCode.NOT_FOUND):
+                return status.HTTP_404_NOT_FOUND
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+@api_router.post("/officer/reviews/{problem_id}/signal", response_model=WorkflowSignalResponse)
+async def signal_problem_workflow(problem_id: str, payload: WorkflowSignalRequest, request: Request, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("officer", "admin"))):
+    """Send the officer decision signal to a running triage workflow."""
+    if payload.decision not in {"APPROVE", "REJECT"}:
+        raise HTTPException(status_code=400, detail="Decision must be APPROVE or REJECT")
+    problem = await db.get(Problem, problem_id)
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    if not problem.temporal_workflow_id:
+        raise HTTPException(status_code=404, detail="No Temporal workflow is linked to this problem")
+    signal_value = WORKFLOW_DECISION_SIGNALS[payload.decision]
+    try:
+        client = await get_temporal_client(request)
+        handle = client.get_workflow_handle(problem.temporal_workflow_id)
+        await handle.signal(OFFICER_SIGNAL_NAME, signal_value)
+    except Exception as exc:
+        if _signal_error_status(exc) == status.HTTP_404_NOT_FOUND:
+            raise HTTPException(status_code=404, detail="Temporal workflow not found or already completed")
+        logger.warning("Temporal signal failed for workflow %s", problem.temporal_workflow_id, exc_info=True)
+        raise HTTPException(status_code=502, detail="Failed to signal the Temporal workflow")
+    return WorkflowSignalResponse(status="success", workflow_id=problem.temporal_workflow_id, signal=signal_value)
 
 
 @api_router.get("/admin/triage/schedules")

@@ -1,5 +1,5 @@
 from typing import AsyncGenerator
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from jose import JWTError, jwt
@@ -53,7 +53,10 @@ def require_role(*roles):
         return current_user
     return role_checker
 
-async def get_temporal_client() -> Client:
+async def get_temporal_client(request: Request) -> Client:
+    """Reuse the lifespan-managed client; connect per request only as a fallback."""
+    client = getattr(request.app.state, "temporal_client", None)
+    if client is not None:
+        return client
     settings = get_settings()
-    client = await Client.connect(settings.TEMPORAL_HOST, namespace=settings.TEMPORAL_NAMESPACE)
-    return client
+    return await Client.connect(settings.TEMPORAL_HOST, namespace=settings.TEMPORAL_NAMESPACE)

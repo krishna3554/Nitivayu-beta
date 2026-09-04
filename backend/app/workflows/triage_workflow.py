@@ -1,5 +1,6 @@
 from datetime import timedelta
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
     from app.activities.extract import extract_submission_activity
@@ -21,23 +22,29 @@ class ChallengeTriageWorkflow:
         # 1. Extract
         extraction_res = await workflow.execute_activity(
             extract_submission_activity,
-            {"raw_text": raw_text},
+            {"raw_text": raw_text, "submission_id": submission_id},
             schedule_to_close_timeout=timedelta(minutes=2),
-            retry_policy={"maximum_attempts": 3}
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )
 
         # 2. Classify and Embed
         classification_res = await workflow.execute_activity(
             classify_and_embed_activity,
-            {"summary": extraction_res["summary"]},
-            schedule_to_close_timeout=timedelta(minutes=1)
+            {"summary": extraction_res["summary"], "submission_id": submission_id},
+            schedule_to_close_timeout=timedelta(minutes=5),
+            retry_policy=RetryPolicy(maximum_attempts=5),
         )
 
         # 3. Deduplication
         dedup_res = await workflow.execute_activity(
             check_deduplication_activity,
-            {"embedding": classification_res["embedding"], "district": district},
-            schedule_to_close_timeout=timedelta(minutes=1)
+            {
+                "embedding": classification_res["embedding"],
+                "district": district,
+                "submission_id": submission_id,
+            },
+            schedule_to_close_timeout=timedelta(minutes=2),
+            retry_policy=RetryPolicy(maximum_attempts=5),
         )
 
         if dedup_res["is_duplicate"]:

@@ -24,7 +24,13 @@ services:
     image: temporalio/temporal:latest
     container_name: nitivayu-temporal
     restart: unless-stopped
-    command: ["server", "start-dev", "--ip", "0.0.0.0", "--port", "7233", "--ui-port", "8233", "--db-filename", "/tmp/temporal.db"]
+    # The image defaults to the unprivileged `temporal` user, which cannot
+    # write to a freshly-provisioned named volume (root-owned). Run as root
+    # so the persistent SQLite file at /data/temporal.db is writable.
+    user: "0:0"
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--port", "7233", "--ui-port", "8233", "--db-filename", "/data/temporal.db"]
+    volumes:
+      - temporal_data:/data
     ports:
       - "7233:7233"   # Temporal gRPC
       - "8233:8233"   # Temporal Web UI
@@ -74,7 +80,7 @@ services:
     container_name: nitivayu-worker
     restart: unless-stopped
     depends_on:
-      backend:
+      postgres:
         condition: service_healthy
       temporal:
         condition: service_healthy
@@ -103,8 +109,17 @@ services:
       - backend
     ports:
       - "3000:80"
+    healthcheck:
+      # Explicit IPv4 loopback: busybox wget resolves localhost to ::1 first
+      # and fails where nginx listens on IPv4; curl is present in the image.
+      test: ["CMD", "curl", "-f", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   postgres_data:
   output_data:
   model_cache:
+  temporal_data:
