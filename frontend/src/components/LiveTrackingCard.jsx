@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { getComplaint } from '../services/api';
-import { SeverityBadge, StatusBadge, Timeline } from './ui';
+import { SeverityBadge, StatusBadge, Timeline, BackgroundGrid } from './ui';
 
 const STAGE_OF = {
   INGESTED: 0, PENDING_TRIAGE: 1, TRIAGING: 1, PENDING_OFFICER_REVIEW: 2, OFFICER_REVIEW: 2,
@@ -45,7 +45,9 @@ export default function LiveTrackingCard() {
   }));
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 md:px-6">
+    <div className="relative mx-auto max-w-3xl overflow-x-clip bg-grid px-4 py-10 md:px-6">
+      <BackgroundGrid />
+      <div className="relative z-10">
       <p className="type-caption text-primary">Live tracker</p>
       <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
         <h1 className="font-mono text-2xl font-bold tracking-tight">{token}</h1>
@@ -120,6 +122,7 @@ export default function LiveTrackingCard() {
           )}
         </>
       )}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
 import { ArrowRight, Building2, GraduationCap, Landmark, ShieldCheck, HeartHandshake, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { MomentGlow, BackgroundGrid } from './ui';
+import { useInViewOnce, useParallaxLayer } from '../lib/motion';
 
 const UNIVERSITIES = ['BIT Mesra', 'NIT Jamshedpur', 'IIT-ISM Dhanbad', 'Central University of Jharkhand', 'Ranchi University', 'XLRI Jamshedpur'];
 
@@ -23,11 +25,18 @@ const PATHWAYS = [
 export default function LandingPage() {
   const railRef = useRef(null);
   const scrollRail = (dir) => railRef.current?.scrollBy({ left: dir * 320, behavior: 'smooth' });
+  const heroRef = useRef(null);
+  const heroGridRef = useParallaxLayer(heroRef, 0.12);
+  const examplesRef = useRef(null);
+  const examplesGridRef = useParallaxLayer(examplesRef, 0.12);
+  const pipeRef = useRef(null);
+  const pipeSeen = useInViewOnce(pipeRef, 0.4);
   return (
     <div className="bg-white">
       {/* Hero — two-column: copy left, pipeline visual right */}
-      <section className="border-b border-border">
-        <div className="mx-auto grid max-w-content items-center gap-12 px-4 py-14 md:grid-cols-2 md:px-6 md:py-20">
+      <section ref={heroRef} className="relative overflow-clip border-b border-border">
+        <BackgroundGrid ref={heroGridRef} />
+        <div className="relative z-10 mx-auto grid max-w-content items-center gap-12 px-4 py-14 md:grid-cols-2 md:px-6 md:py-20">
           <div>
             <p className="badge">Civic innovation, connected</p>
             <h1 className="type-display-lg mt-6 text-ink">From a local voice to a lasting solution.</h1>
@@ -45,16 +54,21 @@ export default function LandingPage() {
           </div>
 
           {/* Data visualization (right) — centered against the hero text block */}
-          <div className="relative mx-auto w-full max-w-md">
+          <MomentGlow className="mx-auto w-full max-w-md">
+          <div className="relative">
             <span aria-hidden className="absolute -left-3 -top-3 h-6 w-6 border-l-2 border-t-2 border-primary" />
             <span aria-hidden className="absolute -right-3 -top-3 h-6 w-6 border-r-2 border-t-2 border-primary" />
             <span aria-hidden className="absolute -bottom-3 -left-3 h-6 w-6 border-b-2 border-l-2 border-primary" />
             <span aria-hidden className="absolute -bottom-3 -right-3 h-6 w-6 border-b-2 border-r-2 border-primary" />
             <div className="card p-6">
               <p className="type-caption text-primary">Live pipeline</p>
-              <ol className="mt-4 space-y-3">
+              <ol ref={pipeRef} className="mt-4 space-y-3">
                 {PIPELINE.map((step, i) => (
-                  <li key={step} className="flex items-center gap-3">
+                  <li
+                    key={step}
+                    className={`reveal-step flex items-center gap-3 ${pipeSeen ? 'is-visible' : ''}`}
+                    style={{ transitionDelay: `${i * 150}ms` }}
+                  >
                     <span className={`flex h-6 w-6 items-center justify-center rounded-md text-xs font-medium-plus ${i < 3 ? 'bg-emerald-500 text-white' : i === 3 ? 'bg-primary-subtle text-primary' : 'bg-surface-muted text-zinc-400'}`}>
                       {i < 3 ? <Check className="h-3.5 w-3.5" /> : i + 1}
                     </span>
@@ -73,10 +87,11 @@ export default function LandingPage() {
               </div>
             </div>
           </div>
+          </MomentGlow>
         </div>
 
         {/* Horizontally scrollable university strip */}
-        <div className="border-t border-border">
+        <div className="relative z-10 border-t border-border">
           <div className="scrollbar-thin mx-auto flex max-w-content gap-2 overflow-x-auto px-4 py-4 md:px-6" aria-label="University network">
             {UNIVERSITIES.map((u) => <span key={u} className="tag-chip shrink-0">{u}</span>)}
           </div>
@@ -84,8 +99,9 @@ export default function LandingPage() {
       </section>
 
       {/* Example challenges carousel — arrows + snap, no native scrollbar */}
-      <section className="mx-auto max-w-content px-4 py-14 md:px-6">
-        <div className="flex items-end justify-between gap-4">
+      <section ref={examplesRef} className="relative mx-auto max-w-content overflow-x-clip px-4 py-14 md:px-6">
+        <BackgroundGrid ref={examplesGridRef} />
+        <div className="relative z-10 flex items-end justify-between gap-4">
           <div>
             <p className="type-caption text-primary">Grounded in real Jharkhand challenges</p>
             <h2 className="type-display-md mt-3 max-w-2xl text-ink">Messy reports in. Research-ready challenges out.</h2>
@@ -99,7 +115,7 @@ export default function LandingPage() {
             </button>
           </div>
         </div>
-        <div ref={railRef} className="-mx-4 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden">
+        <div ref={railRef} className="relative z-10 -mx-4 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden">
           {EXAMPLES.map((c) => (
             <article key={c.id} className="card w-72 shrink-0 snap-start p-5">
               <p className="type-caption text-zinc-400">{c.meta}</p>
