@@ -1,0 +1,42 @@
+/**
+ * Nitivayu design tokens — "Fireworks" system (DESIGN.md, fixed).
+ *
+ * Black-and-white editorial base + one electric-violet accent (#6720FF).
+ * Depth comes from color-blocking (white ↔ black bands) and 1px #E6EAF4
+ * hairlines — never from drop shadows. Only radii: 2px / 8px.
+ * Only weights: 400 / 500 (buttons only) / 550 (headings+labels) / 700.
+ */
+
+:root {
+  /* Brand & accent */
+  --color-primary: #6720FF;
+  --color-primary-subtle: #E0D1FF;
+  --color-interactive-blue: #1863DC;
+
+  /* Surfaces */
+  --color-surface-white: #FFFFFF;
+  --color-surface-muted: #F4F4F4;
+  --color-ink: #000000;
+  --color-ink-secondary: #212121;
+
+  /* Hairlines */
+  --color-border: #E6EAF4;
+
+  /* Status — scoped to status/severity badges only */
+  --color-success: #059669;
+  --color-pending: #F59E0B;
+  --color-critical: #E11D48;
+  --color-academic: #4F46E5;
+  --color-csr: #0284C7;
+
+  /* Shape */
+  --rounded-sm: 2px;
+  --rounded-md: 8px;
+
+  /* Motion: 150–200ms ease-out for state changes only */
+  --motion-fast: 150ms ease-out;
+  --motion-base: 200ms ease-out;
+
+  /* Navbar / footer structure */
+  --navbar-height: 73px;
+}

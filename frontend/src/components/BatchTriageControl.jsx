@@ -36,7 +36,7 @@ export default function BatchTriageControl() {
         <div className="col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
-              <Settings className="w-5 h-5 text-indigo-600" /> Current Configuration
+              <Settings className="w-5 h-5 text-primary" /> Current Configuration
             </h2>
             <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full uppercase tracking-wider flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Active
@@ -46,7 +46,7 @@ export default function BatchTriageControl() {
           <div className="grid grid-cols-2 gap-8">
             <div>
               <p className="text-sm font-medium text-zinc-500 mb-1">Schedule Mode</p>
-              <select defaultValue={schedule?.active_cadence === 'daily' ? 'daily' : 'weekly'} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm font-medium text-zinc-900">
+              <select className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary text-sm font-medium text-zinc-900">
                 <option value="continuous">Continuous (Queue-based)</option>
                 <option value="daily">Daily Cron (2:00 AM)</option>
                 <option value="weekly">Weekly Cron</option>
@@ -58,14 +58,14 @@ export default function BatchTriageControl() {
             </div>
           </div>
         </div>
-      {message && <p className="mb-5 text-sm text-indigo-700">{message}</p>}
+      {message && <p className="mb-5 text-sm text-primary">{message}</p>}
 
-        <div className="bg-slate-900 rounded-xl shadow-sm border border-slate-800 p-6 text-white flex flex-col justify-center">
+        <div className="bg-ink rounded-md shadow-sm p-6 text-white flex flex-col justify-center">
           <h3 className="text-sm font-medium text-slate-400 mb-4">Manual Override</h3>
           <button 
             onClick={handleRun}
             disabled={isRunning}
-            className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-800 disabled:cursor-not-allowed rounded-lg font-bold text-white transition-colors flex items-center justify-center gap-2"
+            className="w-full py-4 bg-primary hover:brightness-95 disabled:opacity-60 disabled:cursor-not-allowed rounded-md font-medium text-white transition-colors flex items-center justify-center gap-2"
           >
             {isRunning ? (
               <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Running Batch...</>
@@ -112,7 +112,7 @@ export default function BatchTriageControl() {
                   )}
                 </td>
                 <td className="p-4 text-right">
-                  <button className="p-2 text-zinc-400 hover:text-indigo-600 transition-colors" title="Download CSV">
+                    <button className="p-2 text-zinc-400 hover:text-primary transition-colors" title="Download CSV">
                     <Download className="w-4 h-4 inline" />
                   </button>
                 </td>
