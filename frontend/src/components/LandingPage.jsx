@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowRight, Building2, GraduationCap, Landmark, ShieldCheck, HeartHandshake, Check } from 'lucide-react';
+import React, { useRef } from 'react';
+import { ArrowRight, Building2, GraduationCap, Landmark, ShieldCheck, HeartHandshake, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const UNIVERSITIES = ['BIT Mesra', 'NIT Jamshedpur', 'IIT-ISM Dhanbad', 'Central University of Jharkhand', 'Ranchi University', 'XLRI Jamshedpur'];
@@ -21,6 +21,8 @@ const PATHWAYS = [
 ];
 
 export default function LandingPage() {
+  const railRef = useRef(null);
+  const scrollRail = (dir) => railRef.current?.scrollBy({ left: dir * 320, behavior: 'smooth' });
   return (
     <div className="bg-white">
       {/* Hero — two-column: copy left, pipeline visual right */}
@@ -81,13 +83,25 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Example challenges carousel */}
+      {/* Example challenges carousel — arrows + snap, no native scrollbar */}
       <section className="mx-auto max-w-content px-4 py-14 md:px-6">
-        <p className="type-caption text-primary">Grounded in real Jharkhand challenges</p>
-        <h2 className="type-display-md mt-3 max-w-2xl text-ink">Messy reports in. Research-ready challenges out.</h2>
-        <div className="scrollbar-thin -mx-4 mt-8 flex gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:px-0">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="type-caption text-primary">Grounded in real Jharkhand challenges</p>
+            <h2 className="type-display-md mt-3 max-w-2xl text-ink">Messy reports in. Research-ready challenges out.</h2>
+          </div>
+          <div className="hidden shrink-0 gap-2 sm:flex" role="group" aria-label="Scroll case studies">
+            <button type="button" onClick={() => scrollRail(-1)} aria-label="Previous case studies" className="rounded-md border border-border p-2 text-ink-secondary hover:border-primary hover:text-primary">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button type="button" onClick={() => scrollRail(1)} aria-label="Next case studies" className="rounded-md border border-border p-2 text-ink-secondary hover:border-primary hover:text-primary">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <div ref={railRef} className="-mx-4 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden">
           {EXAMPLES.map((c) => (
-            <article key={c.id} className="card w-72 shrink-0 p-5">
+            <article key={c.id} className="card w-72 shrink-0 snap-start p-5">
               <p className="type-caption text-zinc-400">{c.meta}</p>
               <h3 className="mt-2 text-base font-medium-plus text-ink">{c.id}</h3>
               <p className="type-body-sm mt-2 text-zinc-500">{c.note}</p>

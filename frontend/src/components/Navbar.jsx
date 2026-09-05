@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { Menu, X, Search } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 
@@ -34,7 +34,13 @@ export default function Navbar() {
           </Link>
           <nav className="hidden items-center gap-6 md:flex" aria-label="Primary">
             {NAV.map((n) => (
-              <Link key={n.to} to={n.to} className="type-nav-link text-ink hover:text-primary">{n.label}</Link>
+              <NavLink
+                key={n.to}
+                to={n.to}
+                className={({ isActive }) => `type-nav-link ${isActive ? 'text-primary' : 'text-ink hover:text-primary'}`}
+              >
+                {n.label}
+              </NavLink>
             ))}
           </nav>
         </div>
@@ -79,7 +85,14 @@ export default function Navbar() {
         <div className="border-t border-border bg-white px-4 py-4 md:hidden">
           <nav className="grid gap-1" aria-label="Mobile">
             {NAV.map((n) => (
-              <Link key={n.to} to={n.to} onClick={() => setOpen(false)} className="type-nav-link rounded-md px-2 py-2.5 text-ink hover:bg-surface-muted">{n.label}</Link>
+              <NavLink
+                key={n.to}
+                to={n.to}
+                onClick={() => setOpen(false)}
+                className={({ isActive }) => `type-nav-link rounded-md px-2 py-2.5 ${isActive ? 'bg-primary-subtle text-primary' : 'text-ink hover:bg-surface-muted'}`}
+              >
+                {n.label}
+              </NavLink>
             ))}
             {!session && <Link to="/login" onClick={() => setOpen(false)} className="type-nav-link rounded-md px-2 py-2.5 text-ink">Sign in</Link>}
             {session ? (

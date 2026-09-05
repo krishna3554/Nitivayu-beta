@@ -75,8 +75,39 @@ export default function Login() {
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-73px)] max-w-content items-center justify-center px-4 py-12 md:px-6">
-      <div className="card w-full max-w-md p-8">
-        <div className="mb-6 text-center">
+      <div className="card grid w-full max-w-4xl overflow-hidden md:grid-cols-[1fr_1.15fr]">
+        {/* Brand panel — fills the wide-screen void with context */}
+        <div className="hidden flex-col justify-between bg-ink p-8 text-white md:flex">
+          <img
+            src="/nitivayu-mark.png"
+            srcSet="/nitivayu-mark-64.png 1x, /nitivayu-mark.png 2x"
+            alt="Nitivayu logo"
+            width={40}
+            height={40}
+            className="h-10 w-10 rounded-md"
+          />
+          <div>
+            <p className="type-caption text-white/50">One account · one workspace</p>
+            <h2 className="mt-3 text-3xl font-medium-plus tracking-tight">Helplines close tickets. You solve problems.</h2>
+            <ul className="mt-6 space-y-4">
+              {[
+                ['Citizens', 'Report in Hindi, Hinglish, or English — your token arrives in seconds.'],
+                ['Officers', 'Verify AI-structured matches inside a 72-hour SLA.'],
+                ['Universities & CSR', 'Build M1–M3 milestones with funding you can audit.'],
+              ].map(([title, copy]) => (
+                <li key={title} className="flex gap-3">
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                  <p className="text-sm text-white/70"><strong className="font-medium-plus text-white">{title} — </strong>{copy}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p className="type-body-sm text-white/40">Your tracking token stays public; your account stays private.</p>
+        </div>
+
+        {/* Form panel */}
+        <div className="p-8">
+        <div className="mb-6 text-center md:hidden">
           <img
             src="/nitivayu-mark.png"
             srcSet="/nitivayu-mark-64.png 1x, /nitivayu-mark.png 2x"
@@ -85,7 +116,9 @@ export default function Login() {
             height={48}
             className="mx-auto h-12 w-12 rounded-md"
           />
-          <h1 className="mt-4 text-2xl font-medium-plus tracking-tight">Sign in to Nitivayu</h1>
+        </div>
+        <div className="mb-6 text-center md:text-left">
+          <h1 className="text-2xl font-medium-plus tracking-tight">Sign in to Nitivayu</h1>
           <p className="type-body-sm mt-1 text-zinc-500">You land in your workspace — never a shared dashboard.</p>
         </div>
 
@@ -163,6 +196,7 @@ export default function Login() {
             <li>iic.head@bitmesra.ac.in</li>
             <li>csr@tatasteel.com</li>
           </ul>
+        </div>
         </div>
       </div>
     </div>

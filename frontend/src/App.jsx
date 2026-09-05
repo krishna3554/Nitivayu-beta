@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
-import { Routes, Route, Navigate, Link } from 'react-router-dom';
-import { AuthProvider, RequireWorkspace } from './lib/auth';
+import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import { AuthProvider, RequireWorkspace, useAuth } from './lib/auth';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import LandingPage from './components/LandingPage';
@@ -115,9 +115,41 @@ export default function App() {
             </Routes>
           </Suspense>
         </main>
-        <Footer />
+        <AppFooter />
       </div>
     </AuthProvider>
+  );
+}
+
+/**
+ * Public pages get the full marketing sitemap footer.
+ * Authenticated workspaces get a minimal utility bar instead —
+ * the public footer must never render inside /app/*.
+ */
+function AppFooter() {
+  const { pathname } = useLocation();
+  const { session } = useAuth();
+  if (!pathname.startsWith('/app/')) return <Footer />;
+  const names = {
+    citizen: 'Citizen App',
+    officer: 'Officer Console',
+    university: 'University Workspace',
+    corporate: 'Corporate Workspace',
+    admin: 'Admin Control Plane',
+  };
+  const ws = pathname.split('/')[2] || '';
+  return (
+    <div className="border-t border-border bg-white">
+      <div className="mx-auto flex max-w-content flex-wrap items-center justify-between gap-2 px-4 py-3 md:px-6">
+        <p className="text-xs text-zinc-500">
+          {names[ws] || 'Workspace'}{session?.orgName ? ` · ${session.orgName}` : ''}
+        </p>
+        <p className="flex items-center gap-4 text-xs text-zinc-500">
+          <span>Nitivayu v0.1</span>
+          <Link to="/about#contact" className="hover:text-ink">Support</Link>
+        </p>
+      </div>
+    </div>
   );
 }
 

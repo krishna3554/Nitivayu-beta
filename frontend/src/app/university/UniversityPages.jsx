@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Inbox, Users } from 'lucide-react';
-import { EmptyState, SeverityBadge, SLACountdown, StatusBadge } from '../../components/ui';
+import { EmptyState, PageBack, SeverityBadge, SLACountdown, StatusBadge } from '../../components/ui';
 import { getUniversityInbox, getUniversityProjects, getUniversityWorkspace, respondToAssignment } from '../../services/api';
 
 export function UniversityInboxPage() {
@@ -65,7 +65,8 @@ export function UniversityProjectsPage() {
   }, []);
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="type-display-md !text-3xl">Active projects</h1>
+      <PageBack to="/app/university" label="Back to inbox" />
+      <h1 className="type-display-md mt-3 !text-3xl">Active projects</h1>
       <p className="type-body-md mt-2 text-zinc-500">Teams, mentors, and M1–M3 evidence live here until field handover.</p>
       <div className="mt-5">
         {failed ? <EmptyState icon={Users} title="Could not load your projects — retry in a moment." actionLabel="Back to inbox" actionTo="/app/university" />
@@ -105,7 +106,8 @@ export function UniversityProfilePage() {
   useEffect(() => { getUniversityWorkspace().then(({ data }) => setWs(data)).catch(() => {}); }, []);
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="type-display-md !text-3xl">IIC profile</h1>
+      <PageBack to="/app/university" label="Back to inbox" />
+      <h1 className="type-display-md mt-3 !text-3xl">IIC profile</h1>
       <div className="card mt-5 space-y-3 p-6">
         <Row k="Institution" v={ws?.name || 'Your university'} />
         <Row k="Code" v={ws?.short_code || '—'} />

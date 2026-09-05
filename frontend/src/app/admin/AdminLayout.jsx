@@ -9,9 +9,9 @@ export default function AdminLayout() {
       workspace="admin"
       orgLabel="Control plane"
       items={[
-        { to: '/app/admin', match: '/app/admin$', label: 'Organizations', icon: Building2 },
-        { to: '/app/admin/telemetry', match: '/app/admin/telemetry', label: 'Telemetry', icon: Activity },
-        { to: '/app/admin/exports', match: '/app/admin/exports', label: 'Compliance exports', icon: FileDown },
+        { to: '/app/admin', end: true, label: 'Organizations', icon: Building2 },
+        { to: '/app/admin/telemetry', label: 'Telemetry', icon: Activity },
+        { to: '/app/admin/exports', label: 'Compliance exports', icon: FileDown },
       ]}
     >
       <Outlet />

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Building2, Send, FileDown, CheckCircle2 } from 'lucide-react';
-import { EmptyState } from '../../components/ui';
+import { EmptyState, PageBack } from '../../components/ui';
 import ScalabilityDashboard from '../../components/ScalabilityDashboard';
 import { exportTriageReport } from '../../services/api';
 import api from '../../services/api';
@@ -55,7 +55,8 @@ export function AdminOrgsPage() {
 export function AdminTelemetryPage() {
   return (
     <div>
-      <h1 className="type-display-md !text-3xl">Telemetry</h1>
+      <PageBack to="/app/admin" label="Back to organizations" />
+      <h1 className="type-display-md mt-3 !text-3xl">Telemetry</h1>
       <p className="type-body-md mt-2 max-w-2xl text-zinc-500">Pipeline health across intake, triage, routing, and funding. Full Prometheus/Grafana wiring lands with realtime + observability (Phase 5).</p>
       <div className="mt-5"><ScalabilityDashboard bare /></div>
     </div>
@@ -73,7 +74,8 @@ export function AdminExportsPage() {
   };
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="type-display-md !text-3xl">Compliance exports</h1>
+      <PageBack to="/app/admin" label="Back to organizations" />
+      <h1 className="type-display-md mt-3 !text-3xl">Compliance exports</h1>
       <p className="type-body-md mt-2 text-zinc-500">Triage CSVs, SLA logs, routing PDFs, audit JSONL, and CSR matrices — versioned and downloadable. Object-storage signed URLs arrive with compliance hardening (Phase 7).</p>
       <div className="card mt-5 flex flex-wrap items-center justify-between gap-4 p-6">
         <div>

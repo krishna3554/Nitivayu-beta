@@ -67,7 +67,7 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
   const [sheet, setSheet] = useState(null); // photo|camera|audio|location
   const [recording, setRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
-  const [compressing, setCompressing] = useState(false);
+  const [compressing, setCompressing] = useState(null); // {done,total} while photos compress
 
   const fileRef = useRef(null);
   const cameraFileRef = useRef(null);
@@ -113,11 +113,15 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
   const addFiles = async (files) => {
     const list = Array.from(files || []).filter((f) => f.type.startsWith('image/'));
     if (!list.length) return;
-    setCompressing(true);
+    const batch = [...list].slice(0, 4 - photos.length);
+    setCompressing({ done: 0, total: batch.length });
     const compressed = [];
-    for (const f of [...list].slice(0, 4 - photos.length)) compressed.push(await compressImage(f));
+    for (let i = 0; i < batch.length; i++) {
+      compressed.push(await compressImage(batch[i]));
+      setCompressing({ done: i + 1, total: batch.length });
+    }
     setPhotos((prev) => [...prev, ...compressed].slice(0, 4));
-    setCompressing(false);
+    setCompressing(null);
     setSheet(null);
   };
 
@@ -242,14 +246,34 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
         </span>
       </div>
 
-      {/* Attachment chips */}
+      {/* Attachment chips — photo chip shows live compression progress */}
       <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Add evidence">
-        {chip('photo', ImagePlus, 'Photo', photos.length || null)}
-        {chip('camera', Camera, 'Camera', null, !canCamera)}
+        {chip('photo', ImagePlus,
+          compressing ? `Preparing ${compressing.done}/${compressing.total}` : 'Photo',
+          !compressing && (photos.length || null))}
+        {chip('camera', Camera, 'Camera', null, !canCamera || !!compressing)}
         {canRecordAudio && chip('audio', Mic, audioBlob ? 'Audio ✓' : 'Audio', audioBlob ? null : (recording ? '●' : null))}
         {chip('location', MapPin, geo ? 'Location ✓' : 'Location', null)}
       </div>
       {!canCamera && <p className="type-body-sm mt-2 text-zinc-400">This browser has no in-app camera — use Photo upload instead.</p>}
+      {compressing && (
+        <div
+          className="mt-3"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={compressing.total}
+          aria-valuenow={compressing.done}
+          aria-label="Compressing photos for upload"
+        >
+          <div className="h-1 overflow-hidden rounded-full bg-surface-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all"
+              style={{ width: `${Math.round((compressing.done / Math.max(1, compressing.total)) * 100)}%` }}
+            />
+          </div>
+          <p className="type-body-sm mt-1.5 text-zinc-500">Compressing photo {Math.min(compressing.done + 1, compressing.total)} of {compressing.total} for upload…</p>
+        </div>
+      )}
       {!canRecordAudio && <p className="type-body-sm mt-2 text-zinc-400">Audio notes need a browser with recording support — your text report still works fully.</p>}
 
       {/* Inline previews */}
