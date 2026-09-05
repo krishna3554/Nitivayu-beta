@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Play, Settings, Calendar, Clock, Download, CheckCircle, AlertCircle } from 'lucide-react';
-import { getBatchStatus, runBatch } from '../services/api';
+import { getBatchStatus, getErrorMessage, runBatch } from '../services/api';
 
 export default function BatchTriageControl() {
   const [isRunning, setIsRunning] = useState(false);
   const [schedule, setSchedule] = useState(null);
   const [message, setMessage] = useState('');
-  React.useEffect(() => { getBatchStatus().then(({ data }) => setSchedule(data)).catch(console.error); }, []);
+  const [loadError, setLoadError] = useState('');
+  React.useEffect(() => { getBatchStatus().then(({ data }) => setSchedule(data)).catch((err) => setLoadError(getErrorMessage(err, 'Unable to load batch schedule.'))); }, []);
   
   const history = [
     { id: 'B-004', date: '2023-11-24 02:00', mode: 'Daily', count: 1240, status: 'Success', time: '14m 22s' },
@@ -17,7 +18,7 @@ export default function BatchTriageControl() {
   const handleRun = async () => {
     if(window.confirm('Are you sure you want to trigger a manual batch run?')) {
       setIsRunning(true);
-      try { const { data } = await runBatch({ cadence_type: schedule?.active_cadence || 'weekly', include_unassigned_only: true }); setMessage(`Batch ${data.batch_workflow_id} is queued.`); } catch (error) { setMessage(error.response?.data?.detail || 'Unable to start batch.'); }
+      try { const { data } = await runBatch({ cadence_type: schedule?.active_cadence || 'weekly', include_unassigned_only: true }); setMessage(`Batch ${data.batch_workflow_id} is queued.`); } catch (error) { setMessage(getErrorMessage(error, 'Unable to start batch.')); }
       finally { setIsRunning(false); }
     }
   };
@@ -28,6 +29,8 @@ export default function BatchTriageControl() {
         <h1 className="text-2xl font-bold text-zinc-900">Batch Triage Control</h1>
         <p className="text-zinc-600 mt-1">Manage the AI background processor for high-volume complaint routing.</p>
       </div>
+
+      {loadError && <p role="alert" className="mb-5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{loadError}</p>}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -45,7 +48,7 @@ export default function BatchTriageControl() {
               <p className="text-sm font-medium text-zinc-500 mb-1">Schedule Mode</p>
               <select className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary text-sm font-medium text-zinc-900">
                 <option value="continuous">Continuous (Queue-based)</option>
-                <option value="daily" selected={schedule?.active_cadence === 'daily'}>Daily Cron (2:00 AM)</option>
+                <option value="daily">Daily Cron (2:00 AM)</option>
                 <option value="weekly">Weekly Cron</option>
               </select>
             </div>
@@ -77,6 +80,7 @@ export default function BatchTriageControl() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-5 border-b border-slate-200 flex justify-between items-center">
           <h2 className="text-lg font-semibold text-zinc-900">Run History</h2>
+          <span className="text-xs text-zinc-400 font-medium">Sample history</span>
         </div>
         <table className="w-full text-left">
           <thead className="bg-slate-50 border-b border-slate-200">

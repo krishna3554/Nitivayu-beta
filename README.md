@@ -117,25 +117,49 @@ For single-click management on Windows:
 ## Manual Setup Instructions
 
 1. Clone the repository.
-2. Copy `.env.example` to `.env`:
+2. Copy `.env.example` to `.env` and set your own values (especially `JWT_SECRET` and `OPENROUTER_API_KEY`):
    ```bash
    cp .env.example .env
    ```
-3. Update the `.env` file with your `OPENROUTER_API_KEY`.
-4. Run the multi-service composition:
+3. Run the multi-service composition:
    ```bash
    docker compose up --build
    ```
+4. (Recommended) Load the deterministic demo dataset so every portal is populated:
+   ```bash
+   docker compose --profile demo run --rm seed
+   ```
+   The seeder is idempotent — re-running it never creates duplicates.
 
 ## Service URLs
 - **Frontend (Web UI)**: [http://localhost:3000](http://localhost:3000)
-- **Backend API**: [http://localhost:8000](http://localhost:8000) (Swagger UI at `/docs`)
+- **Backend API**: [http://localhost:8000](http://localhost:8000) (Swagger UI at `/docs`, health at `/api/health`)
 - **Temporal Web UI**: [http://localhost:8233](http://localhost:8233)
 
-## Seed Data
-The database is pre-seeded with:
+## Demo Accounts & Data
+
+Sign in at `/login` with any password:
+
+| Portal | Email |
+| --- | --- |
+| Officer / Admin | `officer@nitivayu.gov.in` / `admin@nitivayu.in` |
+| University | `iic.head@bitmesra.ac.in` |
+| CSR Industry | `csr@tatasteel.com` |
+
+Tracking tokens `NITIVAYU-2026-JH-DEMO01` … `NITIVAYU-2026-JH-DEMO15` can be entered at `/track`.
+
+The seed dataset includes:
 - **6 Universities**: BIT Mesra, NIT Jamshedpur, IIT (ISM) Dhanbad, CUJ, Ranchi University, XLRI
-- **15 Ground Truth Civic Challenges**: Realistic submissions representing problems in Jharkhand across water contamination, industrial pollution, coal mining dust, tribal handicrafts, and education.
+- **4 CSR Industries**: Tata Steel, CCL, BCCL, Vedanta
+- **15 Ground Truth Civic Challenges**: realistic Jharkhand submissions spread across every pipeline stage — pending officer review, offered to universities, accepted with project teams & milestones, and CSR-funded.
+- **Officers, route assignments, project teams, milestones, funding pledges, and audit logs** exercising every portal workflow.
+
+## Running Tests
+
+```bash
+pip install -r backend/requirements.api.txt pytest httpx
+pytest            # configured by pytest.ini
+```
 
 ## Tech Stack
 

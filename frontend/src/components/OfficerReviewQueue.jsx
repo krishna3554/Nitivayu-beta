@@ -6,6 +6,7 @@ import { EmptyState, ScoreBreakdown, SeverityBadge, SLACountdown, StatusBadge } 
 export default function OfficerReviewQueue() {
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [queue, setQueue] = useState([]);
+  const [stats, setStats] = useState(null);
   const [search, setSearch] = useState('');
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(null);
@@ -44,6 +45,7 @@ export default function OfficerReviewQueue() {
     catch (error) { alert(error.response?.data?.detail || 'Unable to save your decision.'); }
   };
   const bulkApprove = async () => {
+    setActionError('');
     try {
       await Promise.all([...selectedRows].map((id) => decideComplaint(id, { decision: 'APPROVE' })));
       setSelectedRows(new Set());

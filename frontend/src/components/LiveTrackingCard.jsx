@@ -17,6 +17,7 @@ const STAGES = ['Submitted', 'AI triaging', 'Officer review', 'Routed', 'Under w
  */
 export default function LiveTrackingCard() {
   const { token } = useParams();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);

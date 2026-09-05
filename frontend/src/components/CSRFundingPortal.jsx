@@ -13,6 +13,9 @@ export default function CSRFundingPortal() {
   const [showPledgeModal, setShowPledgeModal] = useState(false);
   const [selectedChallenge, setSelectedChallenge] = useState(null);
   const [pledgeAmount, setPledgeAmount] = useState('');
+  const [pledgeError, setPledgeError] = useState('');
+  const [pledgeSuccess, setPledgeSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [challenges, setChallenges] = useState([]);
   const [pledges, setPledges] = useState([]);
   const [summary, setSummary] = useState({ total_pledged_inr: 0, projects_funded: 0 });
@@ -75,12 +78,12 @@ export default function CSRFundingPortal() {
   return (
     <div className="max-w-7xl mx-auto p-6 mt-6">
       {/* Header Dashboard */}
-      <div className="bg-sky-900 rounded-2xl p-8 mb-8 text-white flex justify-between items-center shadow-lg">
+      <div className="bg-sky-900 rounded-2xl p-6 md:p-8 mb-8 text-white flex flex-col md:flex-row justify-between md:items-center gap-6 shadow-lg">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Corporate Social Responsibility</h1>
+          <h1 className="text-2xl md:text-3xl font-bold mb-2">Corporate Social Responsibility</h1>
           <p className="text-sky-100 max-w-xl text-sm leading-relaxed">Direct your CSR funds to validated civic innovation projects driven by top universities. Full transparency and milestone-based disbursement.</p>
         </div>
-        <div className="flex gap-6 text-right">
+        <div className="flex gap-6 md:text-right">
           <div>
             <p className="text-sky-200 text-xs font-semibold uppercase tracking-wider mb-1">Total Pledged</p>
             <p className="text-3xl font-bold">{loading ? '…' : formatINR(summary.total_pledged_inr)}</p>
@@ -181,7 +184,7 @@ export default function CSRFundingPortal() {
       </div>
 
       {showPledgeModal && (
-        <div className="fixed inset-0 bg-zinc-900/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-zinc-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
             <h3 className="text-xl font-bold text-zinc-900 mb-1">Pledge Funding</h3>
             <p className="text-sm text-zinc-600 mb-6">{selectedChallenge?.title}</p>
@@ -196,7 +199,9 @@ export default function CSRFundingPortal() {
 
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowPledgeModal(false)} className="px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
-              <button disabled={!pledgeAmount} onClick={submitPledge} className="px-4 py-2 text-sm font-medium bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors disabled:opacity-50">Confirm Pledge</button>
+              <button disabled={!pledgeAmount || submitting} onClick={submitPledge} className="px-4 py-2 text-sm font-medium bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors disabled:opacity-50">
+                {submitting ? 'Recording…' : 'Confirm Pledge'}
+              </button>
             </div>
           </div>
         </div>
