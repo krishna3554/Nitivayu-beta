@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Inbox, Users } from 'lucide-react';
-import { EmptyState, PageBack, SeverityBadge, SLACountdown, StatusBadge } from '../../components/ui';
+import { EmptyState, PageBack, MilestoneBurst, SeverityBadge, SLACountdown, StatusBadge } from '../../components/ui';
 import { getUniversityInbox, getUniversityProjects, getUniversityWorkspace, respondToAssignment } from '../../services/api';
 
 export function UniversityInboxPage() {
@@ -84,12 +84,17 @@ export function UniversityProjectsPage() {
                 </div>
                 {(p.milestones || []).length > 0 && (
                   <ol className="mt-4 space-y-2">
-                    {p.milestones.map((m) => (
-                      <li key={m.milestone_id || m.milestone_num} className="flex items-center justify-between rounded-sm border border-border bg-surface-muted px-3 py-2 text-sm">
-                        <span>M{m.milestone_num}: {m.title}</span>
-                        <StatusBadge status={m.status} />
+                    {p.milestones.map((m) => {
+                      const verified = String(m.status || '').toUpperCase() === 'VERIFIED';
+                      return (
+                      <li key={m.milestone_id || m.milestone_num} className={`flex items-center justify-between rounded-sm border border-border bg-surface-muted px-3 py-2 text-sm ${verified ? 'relative' : ''}`}>
+                        {verified && <span aria-hidden className="glow-accent glow-loop" />}
+                        {verified && <MilestoneBurst />}
+                        <span className="relative z-10">M{m.milestone_num}: {m.title}</span>
+                        <span className="relative z-10"><StatusBadge status={m.status} /></span>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ol>
                 )}
               </li>

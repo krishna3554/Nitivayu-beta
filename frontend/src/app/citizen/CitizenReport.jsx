@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Copy } from 'lucide-react';
 import EvidenceComposer from '../../components/ui/EvidenceComposer';
+import { MomentGlow, MilestoneBurst } from '../../components/ui';
 import { submitComplaint } from '../../services/api';
 
 function rememberReport(token, title) {
@@ -50,7 +51,9 @@ export default function CitizenReport() {
   if (done) {
     return (
       <div className="mx-auto max-w-xl">
-        <div className="card p-8 text-center">
+        <MomentGlow>
+        <div className="relative card p-8 text-center">
+          <MilestoneBurst />
           <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white" aria-hidden><CheckCircle2 className="h-7 w-7" /></span>
           <h1 className="mt-4 text-2xl font-medium-plus tracking-tight">Your report is in.</h1>
           <p className="type-body-md mt-2 text-zinc-500">It reaches an officer within 72 hours. Save your tracking token — it is your public receipt.</p>
@@ -61,6 +64,7 @@ export default function CitizenReport() {
           <button type="button" onClick={() => navigate(`/track/${done.tracking_token}`)} className="btn-primary mt-6 w-full">Track progress</button>
           <button type="button" onClick={() => setDone(null)} className="link-inline mt-3 !text-sm">File another report</button>
         </div>
+        </MomentGlow>
       </div>
     );
   }

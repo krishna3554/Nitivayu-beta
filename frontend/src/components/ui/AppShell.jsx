@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
+import BackgroundGrid from './BackgroundGrid';
 
 const ACCENTS = {
   citizen: 'bg-emerald-500',
@@ -106,14 +107,18 @@ export default function AppShell({ workspace = 'citizen', items = [], orgLabel, 
         )}
       </aside>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
+      {/* Content — quiet grid extends here for shell consistency;
+          white cards sit above it, so table/card contrast is untouched */}
+      <div className="relative min-w-0 flex-1 overflow-x-clip bg-grid">
+        <BackgroundGrid />
+        <div className="relative z-10">
         {(actions) && (
           <div className="flex items-center justify-end gap-3 border-b border-border bg-white px-4 py-3 md:px-6">
             {actions}
           </div>
         )}
         <div className="p-4 md:p-6">{children}</div>
+        </div>
       </div>
     </div>
   );

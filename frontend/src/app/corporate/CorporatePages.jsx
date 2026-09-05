@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Compass, Wallet, IndianRupee, MapPin, Building } from 'lucide-react';
-import { EmptyState, PageBack, SeverityBadge, StatusBadge } from '../../components/ui';
+import { EmptyState, MomentGlow, MilestoneBurst, PageBack, SeverityBadge, StatusBadge } from '../../components/ui';
 import { createCsrPledge, getCSRChallenges, getCSRPledges } from '../../services/api';
 
 export function formatINR(amount) {
@@ -59,7 +59,17 @@ export function CorporateOpportunitiesPage() {
         <p className="mt-4 text-sm text-white/60">Committed so far: <strong className="text-white">{loading ? '…' : formatINR(summary.total_pledged_inr)}</strong> across <strong className="text-white">{loading ? '…' : summary.projects_funded}</strong> projects</p>
       </div>
 
-      {notice && <p className="card mt-4 border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{notice}</p>}
+      {notice && (notice.startsWith('Pledge of') ? (
+        <MomentGlow className="mt-4">
+          <div className="relative card border-emerald-200 bg-emerald-50 p-5 text-center" role="status">
+            <MilestoneBurst />
+            <p className="font-medium-plus text-emerald-900">Pledge confirmed</p>
+            <p className="type-body-sm mt-1 text-emerald-700">{notice}</p>
+          </div>
+        </MomentGlow>
+      ) : (
+        <p className="card mt-4 border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{notice}</p>
+      ))}
       {error && <p className="card mt-4 border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error} <button onClick={reload} className="font-medium-plus underline">Retry</button></p>}
 
       <div className="mb-4 mt-6 flex items-center justify-between">

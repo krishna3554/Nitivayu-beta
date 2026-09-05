@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Radar, ShieldCheck, GraduationCap } from 'lucide-react';
+import { SectionCorners, BackgroundGrid } from './ui';
 
 /** Public tracker entry — a tracking token is the access control, not a login. */
 export default function TrackLanding() {
   const [token, setToken] = useState('');
   const navigate = useNavigate();
   return (
-    <div className="mx-auto max-w-content px-4 py-14 md:px-6">
-      <div className="mx-auto max-w-xl">
+    <div className="relative mx-auto max-w-content overflow-x-clip bg-grid px-4 py-14 md:px-6">
+      <BackgroundGrid />
+      <SectionCorners />
+      <div className="relative z-10 mx-auto max-w-xl">
         <p className="badge">Live tracker</p>
         <h1 className="type-display-md mt-4 text-ink">Where is your report?</h1>
         <p className="type-body-md mt-3 text-zinc-500">Enter the token you received at submission (e.g. NITIVAYU-2026-JH-XXXXXX). No sign-in needed — share it with anyone.</p>
@@ -30,7 +33,7 @@ export default function TrackLanding() {
       </div>
 
       {/* How tracking works — fills the page with intent, not whitespace */}
-      <div className="mx-auto mt-12 max-w-4xl">
+      <div className="relative z-10 mx-auto mt-12 max-w-4xl">
         <p className="type-caption text-center text-primary">How tracking works</p>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           {[

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
-import { MetricCard } from './ui';
+import { MetricCard, SectionCorners, BackgroundGrid } from './ui';
 import { getDashboardStats } from '../services/api';
 
 export default function Impact() {
@@ -17,8 +17,10 @@ export default function Impact() {
 
   return (
     <div className="bg-white">
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-content px-4 py-14 md:px-6">
+      <section className="relative overflow-x-clip border-b border-border bg-grid">
+        <BackgroundGrid />
+        <SectionCorners />
+        <div className="relative z-10 mx-auto max-w-content px-4 py-14 md:px-6">
           <p className="badge">Impact</p>
           <h1 className="type-display-lg mt-5 max-w-3xl text-ink">Progress you can audit, not just applaud.</h1>
           <p className="type-body-lg mt-5 max-w-2xl text-ink-secondary">Every number below reads from the live pipeline — submissions, routing, milestones, and pledged rupees. No vanity counters.</p>

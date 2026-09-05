@@ -39,4 +39,35 @@
 
   /* Navbar / footer structure */
   --navbar-height: 73px;
+
+  /* Quiet texture system — "quietly premium", never decorative.
+   * --bg-wash: Slate tint gradient for light sections only. Never dark bands.
+   * --bg-grid: dot pattern for the absolute drift layer (<BackgroundGrid>).
+   *   Layer opacity lives in .bg-grid-layer: tune there, once.
+   * --glow-accent: 340px violet → indigo → amber radial reserved for
+   *   exactly four "moment" locations (pipeline card, submit success,
+   *   milestone verified, pledge confirmed). Loops on a 16s cycle;
+   *   static under prefers-reduced-motion. Never on hover/buttons/toasts.
+   * --corner-mark: single-color Primary at ~12% for section watermarks.
+   */
+  --bg-wash: linear-gradient(180deg, #F8FAFC 0%, #F1F0FB 100%);
+  --bg-grid: radial-gradient(circle, #94A3B8 1.2px, transparent 1.2px);
+  --bg-grid-size: 28px;
+  --bg-grid-opacity: 0.16;
+  --bg-grid-drift: 14s;
+  --glow-accent: radial-gradient(circle,
+    rgba(124, 58, 237, 0.35) 0%,
+    rgba(79, 70, 229, 0.22) 45%,
+    rgba(245, 158, 11, 0.12) 70%,
+    transparent 75%);
+  /* Spill beyond the card on all sides. A fixed-size circle gets swallowed
+     whole behind opaque cards wider than itself (pipeline card is ~448px,
+     success card ~576px), rendering the glow invisible — so the halo is
+     sized relative to its moment element instead. Gradient look unchanged. */
+  --glow-spill: 160px;
+  --glow-blur: 18px;
+  --glow-loop: 16s;
+  --burst-duration: 650ms;
+  --corner-mark-color: #6720FF;
+  --corner-mark-opacity: 0.12;
 }

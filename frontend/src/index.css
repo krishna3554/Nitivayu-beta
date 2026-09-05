@@ -120,6 +120,97 @@
   }
   .footer-link { font-size: 14px; font-weight: 400; line-height: 1.7; color: rgba(255,255,255,0.6); }
   .footer-link:hover { color: #fff; }
+
+  /* ——— Quiet texture system ——— */
+  /* Wash for light sections. Dots live in the absolute .bg-grid-layer. */
+  .bg-grid {
+    background-image: var(--bg-wash);
+    background-size: 100% 100%;
+  }
+  /* Full-bleed drifting dot layer. Parent needs `relative` (+
+     `overflow-x-clip` unless it already clips); content sits at z-10.
+     inset -40px keeps tile coverage during parallax travel. */
+  .bg-grid-layer {
+    position: absolute;
+    inset: -40px;
+    z-index: 0;
+    pointer-events: none;
+    opacity: var(--bg-grid-opacity);
+    background-image: var(--bg-grid);
+    background-size: var(--bg-grid-size) var(--bg-grid-size);
+    animation: grid-drift var(--bg-grid-drift, 14s) linear infinite;
+    will-change: transform, background-position;
+  }
+  @keyframes grid-drift {
+    from { background-position: 0 0; }
+    to { background-position: 28px 28px; }
+  }
+  /* Moment glow: violet→indigo→amber halo, reserved for the four moment
+     locations only. Sized relative to its element so light always spills
+     past the card edges; absolutely positioned behind content (z-0). */
+  .glow-accent {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: calc(100% + var(--glow-spill, 160px));
+    height: calc(100% + var(--glow-spill, 160px));
+    border-radius: 999px;
+    z-index: 0;
+    pointer-events: none;
+    background: var(--glow-accent);
+    filter: blur(var(--glow-blur));
+  }
+  /* Slow glow loop: ±6% drift, 1.12x at midpoint, 16s cycle. */
+  .glow-loop {
+    animation: glow-drift var(--glow-loop, 16s) ease-in-out infinite;
+    will-change: transform;
+  }
+  @keyframes glow-drift {
+    0%, 100% { transform: translate(-50%, -50%) translate(-6%, -6%) scale(1); }
+    50% { transform: translate(-50%, -50%) translate(6%, 6%) scale(1.12); }
+  }
+  /* Pipeline checkmark reveal: 0.35s fade+rise, staggered ~150ms via
+     inline transition-delay, triggered once by IntersectionObserver. */
+  .reveal-step {
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+  }
+  .reveal-step.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+  /* Milestone burst: one-shot radial scatter, fires once and settles. */
+  .burst-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .burst-particle {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    border-radius: 999px;
+    animation: burst-scatter var(--burst-duration, 650ms) cubic-bezier(0.16, 0.84, 0.44, 1) forwards;
+    will-change: transform, opacity;
+  }
+  @keyframes burst-scatter {
+    0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0.2); opacity: 0; }
+  }
+  /* Section corner watermark. Rendered via <SectionCorners> at the outer
+     corners of major sections — never on cards. */
+  .corner-mark {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    border: 0 solid var(--corner-mark-color);
+    opacity: var(--corner-mark-opacity);
+    pointer-events: none;
+  }
 }
 
 @layer utilities {
@@ -129,4 +220,18 @@
   .tracking-display-lg { letter-spacing: -1.92px; }
   .tracking-display-md { letter-spacing: -1.44px; }
   .tracking-micro { letter-spacing: 0.56px; }
+}
+
+/* Reduced motion: every effect above degrades to its static end-state. */
+@media (prefers-reduced-motion: reduce) {
+  .glow-loop,
+  .bg-grid-layer,
+  .burst-particle,
+  .reveal-step {
+    animation: none !important;
+    transition: none !important;
+  }
+  .reveal-step { opacity: 1 !important; transform: none !important; }
+  .bg-grid-layer { transform: none !important; }
+  .glow-accent { transform: translate(-50%, -50%) !important; }
 }
