@@ -12,10 +12,10 @@ export default function CitizenLayout() {
       workspace="citizen"
       orgLabel={session?.orgName || 'Resident reporter'}
       items={[
-        { to: '/app/citizen/report', match: '/app/citizen/report', label: 'Report', icon: FilePlus2 },
-        { to: '/app/citizen/reports', match: '/app/citizen/reports', label: 'My reports', icon: FolderOpen, badge: myCount || undefined },
-        { to: '/app/citizen/track', match: '/app/citizen/track', label: 'Track', icon: Radar },
-        { to: '/app/citizen/profile', match: '/app/citizen/profile', label: 'Profile', icon: User },
+        { to: '/app/citizen/report', label: 'Report', icon: FilePlus2 },
+        { to: '/app/citizen/reports', label: 'My reports', icon: FolderOpen, badge: myCount || undefined },
+        { to: '/app/citizen/track', label: 'Track', icon: Radar },
+        { to: '/app/citizen/profile', label: 'Profile', icon: User },
       ]}
     >
       <Outlet />

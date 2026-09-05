@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, Radar, ShieldCheck, GraduationCap } from 'lucide-react';
 
 /** Public tracker entry — a tracking token is the access control, not a login. */
 export default function TrackLanding() {
@@ -27,6 +27,27 @@ export default function TrackLanding() {
             Track <ArrowRight className="h-4 w-4" />
           </button>
         </form>
+      </div>
+
+      {/* How tracking works — fills the page with intent, not whitespace */}
+      <div className="mx-auto mt-12 max-w-4xl">
+        <p className="type-caption text-center text-primary">How tracking works</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {[
+            { icon: Radar, title: 'Submit once', copy: 'Your report is ingested and structured instantly — the token is your public receipt.' },
+            { icon: ShieldCheck, title: 'Officer review ≤ 72h', copy: 'A nodal officer verifies the AI match and routes your challenge to a university.' },
+            { icon: GraduationCap, title: 'Follow to resolution', copy: 'Watch M1–M3 milestones land here until field validation closes your report.' },
+          ].map(({ icon: Icon, title, copy }) => (
+            <div key={title} className="card p-5">
+              <span className="flex h-10 w-10 items-center justify-center rounded-md bg-surface-muted text-ink"><Icon className="h-5 w-5" /></span>
+              <h2 className="mt-4 font-medium-plus">{title}</h2>
+              <p className="type-body-sm mt-1.5 text-zinc-500">{copy}</p>
+            </div>
+          ))}
+        </div>
+        <p className="type-body-sm mt-6 text-center text-zinc-500">
+          Lost your token? File a new report — duplicates are merged automatically. <Link to="/how-it-works" className="link-inline !text-sm font-medium-plus">How the pipeline works</Link>
+        </p>
       </div>
     </div>
   );

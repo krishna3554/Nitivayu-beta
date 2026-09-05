@@ -11,9 +11,9 @@ export default function CorporateLayout() {
       workspace="corporate"
       orgLabel={session?.orgName || 'CSR desk'}
       items={[
-        { to: '/app/corporate', match: '/app/corporate$', label: 'Opportunities', icon: Compass },
-        { to: '/app/corporate/portfolio', match: '/app/corporate/portfolio', label: 'Portfolio', icon: Wallet },
-        { to: '/app/corporate/impact', match: '/app/corporate/impact', label: 'Impact reports', icon: BarChart3 },
+        { to: '/app/corporate', end: true, label: 'Opportunities', icon: Compass },
+        { to: '/app/corporate/portfolio', label: 'Portfolio', icon: Wallet },
+        { to: '/app/corporate/impact', label: 'Impact reports', icon: BarChart3 },
       ]}
     >
       <Outlet />

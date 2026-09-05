@@ -11,9 +11,9 @@ export default function OfficerLayout() {
       workspace="officer"
       orgLabel={session?.orgName || 'Nodal verification gate'}
       items={[
-        { to: '/app/officer', match: '/app/officer', label: 'Review queue', icon: ListChecks },
-        { to: '/app/officer/batch', match: '/app/officer/batch', label: 'Batch control', icon: CalendarClock },
-        { to: '/app/officer/escalations', match: '/app/officer/escalations', label: 'Escalations', icon: AlertTriangle },
+        { to: '/app/officer', end: true, label: 'Review queue', icon: ListChecks },
+        { to: '/app/officer/batch', label: 'Batch control', icon: CalendarClock },
+        { to: '/app/officer/escalations', label: 'Escalations', icon: AlertTriangle },
       ]}
     >
       <Outlet />

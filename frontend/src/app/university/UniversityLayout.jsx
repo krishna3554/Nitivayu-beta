@@ -11,9 +11,9 @@ export default function UniversityLayout() {
       workspace="university"
       orgLabel={session?.orgName || 'IIC workspace'}
       items={[
-        { to: '/app/university', match: '/app/university$', label: 'Challenge inbox', icon: Inbox },
-        { to: '/app/university/projects', match: '/app/university/projects', label: 'Active projects', icon: KanbanSquare },
-        { to: '/app/university/profile', match: '/app/university/profile', label: 'IIC profile', icon: CircleUser },
+        { to: '/app/university', end: true, label: 'Challenge inbox', icon: Inbox },
+        { to: '/app/university/projects', label: 'Active projects', icon: KanbanSquare },
+        { to: '/app/university/profile', label: 'IIC profile', icon: CircleUser },
       ]}
     >
       <Outlet />

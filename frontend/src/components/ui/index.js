@@ -6,3 +6,4 @@ export { default as EmptyState } from './EmptyState';
 export { default as MetricCard } from './MetricCard';
 export { default as ScoreBreakdown } from './ScoreBreakdown';
 export { default as AppShell } from './AppShell';
+export { default as PageBack } from './PageBack';

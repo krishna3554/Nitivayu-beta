@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 
@@ -24,7 +24,21 @@ const TITLES = {
  */
 export default function AppShell({ workspace = 'citizen', items = [], orgLabel, children, actions }) {
   const [open, setOpen] = useState(false);
+  const [noticeOpen, setNoticeOpen] = useState(true);
   const location = useLocation();
+
+  // Workspace notice dismisses itself — it must never squat in the sidebar.
+  useEffect(() => {
+    if (!noticeOpen) return;
+    const t = setTimeout(() => setNoticeOpen(false), 8000);
+    return () => clearTimeout(t);
+  }, [noticeOpen]);
+
+  // Exactly one nav item is active at a time. Index items (end:true) match
+  // exactly; section items match themselves plus their children.
+  const isActive = (item) => item.end
+    ? location.pathname === item.to
+    : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   return (
     <div className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-content flex-col md:flex-row">
       {/* Mobile bar */}
@@ -43,15 +57,15 @@ export default function AppShell({ workspace = 'citizen', items = [], orgLabel, 
         </button>
       </div>
 
-      {/* Sidebar */}
-      <aside className={`${open ? 'block' : 'hidden'} w-full shrink-0 border-b border-border bg-white p-4 md:block md:w-64 md:border-b-0 md:border-r`}>
+      {/* Sidebar — pinned while main content scrolls (desktop) */}
+      <aside className={`${open ? 'block' : 'hidden'} w-full shrink-0 border-b border-border bg-white p-4 md:sticky md:top-[73px] md:block md:max-h-[calc(100vh-73px)] md:w-64 md:self-start md:overflow-y-auto md:border-b-0 md:border-r`}>
         <div className="mb-4 hidden px-2 md:block">
           <p className="type-caption text-primary">{TITLES[workspace] || workspace}</p>
           {orgLabel && <p className="type-body-sm mt-1 text-zinc-500">{orgLabel}</p>}
         </div>
         <nav className="space-y-1" aria-label={`${workspace} workspace`}>
           {items.map((item) => {
-            const active = location.pathname === item.to || (item.match && location.pathname.startsWith(item.match));
+            const active = isActive(item);
             const Icon = item.icon;
             return (
               <Link
@@ -73,11 +87,23 @@ export default function AppShell({ workspace = 'citizen', items = [], orgLabel, 
             );
           })}
         </nav>
-        <div className="mt-6 hidden rounded-md border border-border bg-surface-muted p-3 md:block">
-          <p className="text-xs leading-5 text-zinc-500">
-            Signed in to the {TITLES[workspace] || workspace}. Other workspaces are not loaded in this session.
-          </p>
-        </div>
+        {noticeOpen && (
+          <div className="mt-6 hidden rounded-md border border-border bg-surface-muted p-3 md:block" role="status">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs leading-5 text-zinc-500">
+                Signed in to the {TITLES[workspace] || workspace}. Other workspaces are not loaded in this session.
+              </p>
+              <button
+                type="button"
+                onClick={() => setNoticeOpen(false)}
+                aria-label="Dismiss workspace notice"
+                className="shrink-0 rounded-sm p-0.5 text-zinc-400 hover:text-ink"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </aside>
 
       {/* Content */}

@@ -60,20 +60,20 @@ export default function BatchTriageControl() {
         </div>
       {message && <p className="mb-5 text-sm text-primary">{message}</p>}
 
-        <div className="bg-ink rounded-md shadow-sm p-6 text-white flex flex-col justify-center">
-          <h3 className="text-sm font-medium text-slate-400 mb-4">Manual Override</h3>
+        <div className="card flex flex-col justify-center p-6">
+          <h3 className="type-label-sm mb-4 text-zinc-500">Manual override</h3>
           <button 
             onClick={handleRun}
             disabled={isRunning}
-            className="w-full py-4 bg-primary hover:brightness-95 disabled:opacity-60 disabled:cursor-not-allowed rounded-md font-medium text-white transition-colors flex items-center justify-center gap-2"
+            className="btn-primary flex w-full items-center justify-center gap-2 disabled:opacity-60"
           >
             {isRunning ? (
-              <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Running Batch...</>
+              <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Running batch…</>
             ) : (
-              <><Play className="w-5 h-5" /> Run Batch Now</>
+              <><Play className="w-5 h-5" /> Run batch now</>
             )}
           </button>
-          <p className="text-xs text-slate-500 mt-3 text-center">Spawns Temporal workflow immediately</p>
+          <p className="type-body-sm mt-3 text-center text-zinc-400">Spawns a Temporal workflow immediately</p>
         </div>
       </div>
 

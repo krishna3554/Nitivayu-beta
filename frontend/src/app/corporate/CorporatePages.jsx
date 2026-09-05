@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Compass, Wallet, IndianRupee, MapPin, Building } from 'lucide-react';
-import { EmptyState, SeverityBadge, StatusBadge } from '../../components/ui';
+import { EmptyState, PageBack, SeverityBadge, StatusBadge } from '../../components/ui';
 import { createCsrPledge, getCSRChallenges, getCSRPledges } from '../../services/api';
 
 export function formatINR(amount) {
@@ -119,7 +119,8 @@ export function CorporatePortfolioPage() {
   const { pledges, summary, loading } = useCsrData();
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="type-display-md !text-3xl">Portfolio</h1>
+      <PageBack to="/app/corporate" label="Back to opportunities" />
+      <h1 className="type-display-md mt-3 !text-3xl">Portfolio</h1>
       <p className="type-body-md mt-2 text-zinc-500">
         {loading ? 'Loading your pledges…' : `You have committed ${formatINR(summary.total_pledged_inr)} across ${summary.projects_funded} projects.`}
       </p>
@@ -152,7 +153,8 @@ export function CorporateImpactPage() {
   const disbursed = pledges.filter((p) => ['DISBURSED', 'COMPLETED'].includes(String(p.status).toUpperCase())).length;
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="type-display-md !text-3xl">Impact reports</h1>
+      <PageBack to="/app/corporate" label="Back to opportunities" />
+      <h1 className="type-display-md mt-3 !text-3xl">Impact reports</h1>
       <p className="type-body-md mt-2 text-zinc-500">Monthly funding matrices map your focus areas to validated challenges — exportable for board and audit use.</p>
       <div className="card mt-5 space-y-3 p-6">
         <ImpactRow k="Total committed" v={formatINR(summary.total_pledged_inr)} />

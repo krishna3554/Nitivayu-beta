@@ -10,6 +10,7 @@ export default function OfficerReviewQueue() {
   const [search, setSearch] = useState('');
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const loadQueue = async () => {
     try {
@@ -17,6 +18,7 @@ export default function OfficerReviewQueue() {
       setQueue(Array.isArray(data) ? data : []);
       setFailed(false);
     } catch (error) { console.error(error); setFailed(true); }
+    finally { setLoading(false); }
   };
   useEffect(() => { loadQueue(); }, []);
 
@@ -58,8 +60,8 @@ export default function OfficerReviewQueue() {
     setSelectedRows(next);
   };
 
-  if (failed && !queue.length) {
-    return <EmptyState icon={Inbox} title="Could not load your district queue — check your connection, then retry." actionLabel="Retry" onAction={loadQueue} />;
+  if (failed && !queue.length && !loading) {
+    return <EmptyState icon={Inbox} title="Could not load your district queue — check your connection, then retry." actionLabel="Retry" onAction={() => { setLoading(true); loadQueue(); }} />;
   }
 
   return (
@@ -85,10 +87,10 @@ export default function OfficerReviewQueue() {
         )}
       </div>
 
-      {/* Table */}
+      {/* Table — fixed layout so long titles ellipsis instead of colliding */}
       <div className="card overflow-hidden">
         <div className="scrollbar-thin max-h-[60vh] overflow-auto">
-          <table className="w-full border-collapse text-left">
+          <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
             <thead className="sticky top-0 z-10 border-b border-border bg-white">
               <tr>
                 <th className="w-12 p-3 text-center">
@@ -97,13 +99,20 @@ export default function OfficerReviewQueue() {
                     onChange={(e) => { if (e.target.checked) setSelectedRows(new Set(visibleQueue.map((q) => q.id))); else setSelectedRows(new Set()); }}
                     checked={selectedRows.size === visibleQueue.length && visibleQueue.length > 0} />
                 </th>
-                {['Issue', 'District', 'Severity', 'Top match', 'SLA', 'Status', ''].map((h) => (
-                  <th key={h} className="type-caption p-3 text-zinc-400">{h}</th>
-                ))}
+                <th className="type-caption p-3 text-zinc-400">Issue</th>
+                <th className="type-caption w-28 p-3 text-zinc-400">District</th>
+                <th className="type-caption w-24 p-3 text-zinc-400">Severity</th>
+                <th className="type-caption w-48 p-3 text-zinc-400">Top match</th>
+                <th className="type-caption w-32 p-3 text-zinc-400">SLA</th>
+                <th className="type-caption w-32 p-3 text-zinc-400">Status</th>
+                <th className="sticky right-0 w-20 bg-white p-3 text-right [box-shadow:-12px_0_16px_-12px_rgba(0,0,0,0.25)]"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {visibleQueue.map((row, i) => {
+              {loading ? (
+                <TableSkeleton rows={8} />
+              ) : (
+              visibleQueue.map((row, i) => {
                 const top = row.top_matches?.[0];
                 return (
                   <React.Fragment key={row.id}>
@@ -111,31 +120,35 @@ export default function OfficerReviewQueue() {
                       <td className="p-3 text-center">
                         <input type="checkbox" aria-label={`Select ${row.id}`} className="cursor-pointer accent-[#6720FF]" checked={selectedRows.has(row.id)} onChange={() => toggleRow(row.id)} />
                       </td>
-                      <td className="max-w-sm p-3">
-                        <button type="button" onClick={() => setExpanded(expanded === row.id ? null : row.id)} className="text-left" aria-expanded={expanded === row.id}>
+                      <td className="min-w-0 overflow-hidden p-3">
+                        <button type="button" onClick={() => setExpanded(expanded === row.id ? null : row.id)} className="block w-full min-w-0 text-left" aria-expanded={expanded === row.id}>
                           <span className="block truncate text-sm font-medium-plus text-ink" title={row.title}>{row.title}</span>
-                          <span className="mt-0.5 block font-mono text-xs text-zinc-400">{String(row.id).slice(0, 8)} · {row.category}</span>
+                          <span className="mt-0.5 block truncate font-mono text-xs text-zinc-400">{String(row.id).slice(0, 8)} · {row.category}</span>
                         </button>
                       </td>
-                      <td className="p-3 text-sm text-ink-secondary">{row.district}</td>
-                      <td className="p-3"><SeverityBadge value={row.severity} /></td>
-                      <td className="p-3 text-sm">
-                        <span className="font-medium-plus text-ink">{top?.university_name || 'Awaiting match'}</span>
-                        {top && <span className="ml-1.5 font-mono text-xs text-primary">{Number(top.match_score).toFixed(3)}</span>}
+                      <td className="whitespace-nowrap p-3 text-sm text-ink-secondary">{row.district}</td>
+                      <td className="whitespace-nowrap p-3"><SeverityBadge value={row.severity} /></td>
+                      <td className="min-w-0 overflow-hidden whitespace-nowrap p-3 text-sm">
+                        <span className="block truncate font-medium-plus text-ink" title={top?.university_name || 'Awaiting match'}>{top?.university_name || 'Awaiting match'}</span>
+                        {top && <span className="font-mono text-xs text-primary">{Number(top.match_score).toFixed(3)}</span>}
                       </td>
-                      <td className="p-3"><SLACountdown slaHoursRemaining={row.sla_hours_remaining} totalHours={72} /></td>
-                      <td className="p-3"><StatusBadge status={row.status} /></td>
-                      <td className="p-3 text-right">
+                      <td className="whitespace-nowrap p-3"><SLACountdown slaHoursRemaining={row.sla_hours_remaining} totalHours={72} /></td>
+                      <td className="whitespace-nowrap p-3"><StatusBadge status={row.status} /></td>
+                      <td className="sticky right-0 whitespace-nowrap bg-white p-3 text-right [box-shadow:-12px_0_16px_-12px_rgba(0,0,0,0.25)]">
                         <span className="inline-flex justify-end gap-2">
-                          <button onClick={() => decide(row.id, 'APPROVE')} className="rounded-md border border-transparent p-1.5 text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50" title="Approve & route"><Check className="h-4 w-4" /></button>
-                          <button onClick={() => decide(row.id, 'REJECT')} className="rounded-md border border-transparent p-1.5 text-rose-600 hover:border-rose-200 hover:bg-rose-50" title="Reject"><X className="h-4 w-4" /></button>
+                          <button onClick={() => decide(row.id, 'APPROVE')} className="rounded-md border border-transparent p-1.5 text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50" title="Approve & route" aria-label={`Approve ${row.title}`}>
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => decide(row.id, 'REJECT')} className="rounded-md border border-transparent p-1.5 text-rose-600 hover:border-rose-200 hover:bg-rose-50" title="Reject" aria-label={`Reject ${row.title}`}>
+                            <X className="h-4 w-4" />
+                          </button>
                         </span>
                       </td>
                     </tr>
                     {expanded === row.id && top && (
                       <tr className="bg-surface-muted/40">
                         <td />
-                        <td colSpan={6} className="p-4">
+                        <td colSpan={7} className="p-4">
                           <p className="type-caption text-zinc-400">Why this match</p>
                           <div className="mt-2 max-w-md"><ScoreBreakdown breakdown={top.score_breakdown} total={top.match_score} /></div>
                         </td>
@@ -143,10 +156,11 @@ export default function OfficerReviewQueue() {
                     )}
                   </React.Fragment>
                 );
-              })}
+              })
+              )}
             </tbody>
           </table>
-          {!visibleQueue.length && (
+          {!loading && !visibleQueue.length && (
             <div className="p-6"><EmptyState icon={Inbox} title={search ? `No reports match “${search}” — clear the search to see your full queue.` : 'No submissions in your district yet — check back after the weekly batch run.'} /></div>
           )}
         </div>
@@ -166,4 +180,23 @@ export default function OfficerReviewQueue() {
 
 function Kbd({ children }) {
   return <kbd className="rounded-sm border border-border bg-white px-1.5 py-0.5 font-mono text-[11px]">{children}</kbd>;
+}
+
+function TableSkeleton({ rows = 8 }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <tr key={i} className="animate-pulse" aria-hidden>
+          <td className="p-3"><span className="mx-auto block h-4 w-4 rounded-sm bg-surface-muted" /></td>
+          <td className="p-3"><span className="block h-4 w-3/4 rounded-sm bg-surface-muted" /><span className="mt-2 block h-3 w-1/3 rounded-sm bg-surface-muted" /></td>
+          <td className="p-3"><span className="block h-4 w-16 rounded-sm bg-surface-muted" /></td>
+          <td className="p-3"><span className="block h-5 w-14 rounded-md bg-surface-muted" /></td>
+          <td className="p-3"><span className="block h-4 w-28 rounded-sm bg-surface-muted" /></td>
+          <td className="p-3"><span className="block h-5 w-20 rounded-md bg-surface-muted" /></td>
+          <td className="p-3"><span className="block h-5 w-20 rounded-md bg-surface-muted" /></td>
+          <td className="p-3"><span className="ml-auto block h-7 w-16 rounded-md bg-surface-muted" /></td>
+        </tr>
+      ))}
+    </>
+  );
 }
