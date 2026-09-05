@@ -33,10 +33,14 @@ export const decideComplaint = (id, data) => api.post(`/officer/reviews/${id}/de
 export const getBatchStatus = () => api.get('/admin/triage/schedules');
 export const runBatch = (data) => api.post('/admin/triage/trigger-batch', data);
 export const getUniversityInbox = () => api.get('/university/inbox');
+export const getUniversityProjects = () => api.get('/university/projects');
+export const getUniversityWorkspace = () => api.get('/university/workspace');
 export const respondToAssignment = (id, data) => api.post(`/university/assignments/${id}/respond`, data);
 export const getCSRChallenges = () => api.get('/industry/opportunities');
 export const createCsrPledge = (data) => api.post('/industry/pledges', data);
+export const getCSRPledges = () => api.get('/industry/pledges');
 export const getDashboardStats = () => api.get('/analytics/overview');
 export const loginUser = (credentials) => api.post('/auth/login', credentials);
+export const exportTriageReport = () => api.post('/admin/reports/triage');
 
 export default api;

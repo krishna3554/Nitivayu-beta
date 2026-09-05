@@ -1,25 +1,132 @@
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   body {
-    @apply bg-slate-50 text-zinc-900 font-sans antialiased;
+    @apply bg-surface-white text-ink font-sans antialiased;
+  }
+
+  ::selection {
+    background: var(--color-primary-subtle);
   }
 }
 
+@layer components {
+  /* ——— Typography (DESIGN.md ladder) ——— */
+  .type-display-lg {
+    font-size: 48px;
+    font-weight: 550;
+    line-height: 1.25;
+    letter-spacing: -1.92px;
+  }
+  .type-display-md {
+    font-size: 36px;
+    font-weight: 550;
+    line-height: 1.2;
+    letter-spacing: -1.44px;
+  }
+  .type-body-lg { font-size: 18px; font-weight: 400; line-height: 1.55; }
+  .type-body-lg-strong { font-size: 18px; font-weight: 700; line-height: 1.35; }
+  .type-body-lg-medium { font-size: 18px; font-weight: 550; line-height: 1.55; }
+  .type-body-input { font-size: 20px; font-weight: 400; line-height: 1.5; }
+  .type-body-md { font-size: 16px; font-weight: 400; line-height: 1.5; }
+  .type-body-sm { font-size: 14px; font-weight: 400; line-height: 1.7; }
+  .type-label-sm { font-size: 14px; font-weight: 550; line-height: 1.4; letter-spacing: -0.28px; }
+  /* Favorit substitute: Inter + condensed-technical tracking. Nav/caption only. */
+  .type-nav-link {
+    font-size: 14px; font-weight: 550; line-height: 1.4; letter-spacing: 0.56px;
+    text-transform: uppercase;
+  }
+  .type-caption {
+    font-size: 14px; font-weight: 550; line-height: 1; letter-spacing: 0.56px;
+    text-transform: uppercase;
+  }
+  .type-button { font-size: 14px; font-weight: 500; line-height: 1.7; }
+
+  /* ——— Buttons: one violet CTA per view ——— */
+  .btn-primary {
+    background: var(--color-primary);
+    color: #fff;
+    border-radius: var(--rounded-md);
+    padding: 12px 24px;
+    font-size: 14px; font-weight: 500; line-height: 1.7;
+    transition: filter var(--motion-fast), transform var(--motion-fast);
+  }
+  .btn-primary:hover { filter: brightness(0.93); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-secondary {
+    background: #fff;
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--rounded-md);
+    padding: 12px 24px;
+    font-size: 14px; font-weight: 500; line-height: 1.7;
+    transition: background var(--motion-fast);
+  }
+  .btn-secondary:hover { background: var(--color-primary-subtle); }
+
+  /* ——— Cards / inputs / badges / chips / links ——— */
+  .card {
+    background: #fff;
+    border: 1px solid var(--color-border);
+    border-radius: var(--rounded-md);
+    box-shadow: rgba(172, 171, 171, 0.3) 0px -1px 10px 0px;
+  }
+  .panel-flat {
+    background: #fff;
+    border: 1px solid var(--color-border);
+    border-radius: var(--rounded-md);
+  }
+  .input {
+    background: #fff;
+    border: 1px solid var(--color-border);
+    border-radius: var(--rounded-sm);
+    font-size: 16px; font-weight: 400; line-height: 1.5;
+    padding: 10px 12px;
+    outline: none;
+    width: 100%;
+  }
+  .input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-subtle); }
+  .badge {
+    background: var(--color-primary-subtle);
+    color: var(--color-primary);
+    border-radius: var(--rounded-md);
+    padding: 4px 8px;
+    font-size: 14px; font-weight: 550; line-height: 1; letter-spacing: 0.56px;
+    text-transform: uppercase;
+    display: inline-flex; align-items: center; gap: 4px;
+    white-space: nowrap;
+  }
+  .tag-chip {
+    background: var(--color-surface-muted);
+    color: var(--color-ink-secondary);
+    border-radius: var(--rounded-sm);
+    padding: 4px 12px;
+    font-size: 14px; font-weight: 550; line-height: 1.4; letter-spacing: -0.28px;
+    display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .link-inline { color: var(--color-interactive-blue); font-size: 16px; font-weight: 400; }
+  .link-inline:hover { text-decoration: underline; }
+
+  .navbar-fireworks {
+    height: var(--navbar-height);
+    background: #fff;
+    border-bottom: 1px solid var(--color-border);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .footer-link { font-size: 14px; font-weight: 400; line-height: 1.7; color: rgba(255,255,255,0.6); }
+  .footer-link:hover { color: #fff; }
+}
+
 @layer utilities {
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-zinc-300 rounded-full;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    @apply bg-zinc-400;
-  }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #c9cede; border-radius: 999px; }
+  .tracking-display-lg { letter-spacing: -1.92px; }
+  .tracking-display-md { letter-spacing: -1.44px; }
+  .tracking-micro { letter-spacing: 0.56px; }
 }

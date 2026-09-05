@@ -1,64 +1,159 @@
-import React from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
-import { Bell } from 'lucide-react';
-import CitizenIntakeForm from './components/CitizenIntakeForm';
-import LiveTrackingCard from './components/LiveTrackingCard';
-import OfficerReviewQueue from './components/OfficerReviewQueue';
-import BatchTriageControl from './components/BatchTriageControl';
-import UniversityPortal from './components/UniversityPortal';
-import CSRFundingPortal from './components/CSRFundingPortal';
-import ScalabilityDashboard from './components/ScalabilityDashboard';
-import Login from './components/Login';
+import React, { Suspense } from 'react';
+import { Routes, Route, Navigate, Link } from 'react-router-dom';
+import { AuthProvider, RequireWorkspace } from './lib/auth';
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 import LandingPage from './components/LandingPage';
+import LiveTrackingCard from './components/LiveTrackingCard';
+import TrackLanding from './components/TrackLanding';
+import HowItWorks from './components/HowItWorks';
+import Impact from './components/Impact';
+import About from './components/About';
+import Login from './components/Login';
+import Signup from './components/Signup';
 
-function Navbar() {
-  return (
-    <nav className="bg-white border-b border-zinc-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
-      <div className="flex items-center gap-6">
-        <Link to="/" className="text-xl font-bold text-zinc-900 flex items-center gap-2">
-          <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center text-white">N</div>
-          Nitivayu
-        </Link>
-        <div className="hidden md:flex items-center gap-4 text-sm font-medium text-zinc-600">
-          <Link to="/officer" className="hover:text-zinc-900">Officer</Link>
-          <Link to="/officer/batch" className="hover:text-zinc-900">Batch</Link>
-          <Link to="/university" className="hover:text-zinc-900">University</Link>
-          <Link to="/csr" className="hover:text-zinc-900">CSR</Link>
-          <Link to="/dashboard" className="hover:text-zinc-900">Dashboard</Link>
-        </div>
-      </div>
-      <div className="flex items-center gap-4">
-        <button className="text-zinc-500 hover:text-zinc-900 p-2 relative">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-600 rounded-full"></span>
-        </button>
-        <Link to="/login" className="text-sm font-medium px-4 py-2 bg-zinc-900 text-white rounded-md hover:bg-zinc-800 transition-colors">
-          Login
-        </Link>
-      </div>
-    </nav>
-  );
-}
+// Workspace shells — lazy-loaded per workspace so a citizen never downloads
+// the Officer Console bundle and vice versa (nitivayu.md §4.1).
+const CitizenLayout = React.lazy(() => import('./app/citizen/CitizenLayout'));
+const CitizenReport = React.lazy(() => import('./app/citizen/CitizenReport'));
+const CitizenMyReports = React.lazy(() => import('./app/citizen/CitizenMyReports'));
+const CitizenTrack = React.lazy(() => import('./app/citizen/CitizenTrack'));
+const CitizenProfile = React.lazy(() => import('./app/citizen/CitizenProfile'));
 
-function App() {
+const OfficerLayout = React.lazy(() => import('./app/officer/OfficerLayout'));
+
+const UniversityLayout = React.lazy(() => import('./app/university/UniversityLayout'));
+
+const CorporateLayout = React.lazy(() => import('./app/corporate/CorporateLayout'));
+
+const AdminLayout = React.lazy(() => import('./app/admin/AdminLayout'));
+
+function WorkspaceFallback() {
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <Navbar />
-      <main className="flex-1">
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/report" element={<CitizenIntakeForm />} />
-          <Route path="/track/:token" element={<LiveTrackingCard />} />
-          <Route path="/officer" element={<OfficerReviewQueue />} />
-          <Route path="/officer/batch" element={<BatchTriageControl />} />
-          <Route path="/university" element={<UniversityPortal />} />
-          <Route path="/csr" element={<CSRFundingPortal />} />
-          <Route path="/dashboard" element={<ScalabilityDashboard />} />
-          <Route path="/login" element={<Login />} />
-        </Routes>
-      </main>
+    <div className="mx-auto max-w-content space-y-3 p-6" aria-label="Loading workspace">
+      <div className="card h-12 animate-pulse" />
+      <div className="card h-64 animate-pulse" />
     </div>
   );
 }
 
-export default App;
+function NotFound() {
+  return (
+    <div className="mx-auto max-w-content px-4 py-20 text-center md:px-6">
+      <p className="type-caption text-primary">404</p>
+      <h1 className="type-display-md mt-3">This page is not on the map.</h1>
+      <p className="type-body-md mt-3 text-zinc-500">Check the address, or start from a place we know.</p>
+      <Link to="/" className="btn-primary mt-6 inline-block">Back home</Link>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <div className="flex min-h-screen flex-col bg-white">
+        <Navbar />
+        <main className="flex-1">
+          <Suspense fallback={<WorkspaceFallback />}>
+            <Routes>
+              {/* Public surface — no login, fast on 3G */}
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/track" element={<TrackLanding />} />
+              <Route path="/track/:token" element={<LiveTrackingCard />} />
+              <Route path="/how-it-works" element={<HowItWorks />} />
+              <Route path="/impact" element={<Impact />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+
+              {/* Citizen App */}
+              <Route path="/app/citizen" element={<RequireWorkspace allow={['citizen', 'admin']}><CitizenLayout /></RequireWorkspace>}>
+                <Route index element={<Navigate to="report" replace />} />
+                <Route path="report" element={<CitizenReport />} />
+                <Route path="reports" element={<CitizenMyReports />} />
+                <Route path="track" element={<CitizenTrack />} />
+                <Route path="profile" element={<CitizenProfile />} />
+              </Route>
+
+              {/* Officer Console */}
+              <Route path="/app/officer" element={<RequireWorkspace allow={['officer', 'admin']}><OfficerLayout /></RequireWorkspace>}>
+                <Route index element={<OfficerRoute page="queue" />} />
+                <Route path="batch" element={<OfficerRoute page="batch" />} />
+                <Route path="escalations" element={<OfficerRoute page="escalations" />} />
+              </Route>
+
+              {/* University Workspace */}
+              <Route path="/app/university" element={<RequireWorkspace allow={['university', 'admin']}><UniversityLayout /></RequireWorkspace>}>
+                <Route index element={<UniversityRoute page="inbox" />} />
+                <Route path="projects" element={<UniversityRoute page="projects" />} />
+                <Route path="profile" element={<UniversityRoute page="profile" />} />
+              </Route>
+
+              {/* Corporate / CSR Workspace */}
+              <Route path="/app/corporate" element={<RequireWorkspace allow={['corporate', 'admin']}><CorporateLayout /></RequireWorkspace>}>
+                <Route index element={<CorporateRoute page="opportunities" />} />
+                <Route path="portfolio" element={<CorporateRoute page="portfolio" />} />
+                <Route path="impact" element={<CorporateRoute page="impact" />} />
+              </Route>
+
+              {/* Admin Control Plane */}
+              <Route path="/app/admin" element={<RequireWorkspace allow={['admin']}><AdminLayout /></RequireWorkspace>}>
+                <Route index element={<AdminRoute page="orgs" />} />
+                <Route path="telemetry" element={<AdminRoute page="telemetry" />} />
+                <Route path="exports" element={<AdminRoute page="exports" />} />
+              </Route>
+
+              {/* Legacy routes → workspace homes (demo bookmarks keep working) */}
+              <Route path="/report" element={<Navigate to="/app/citizen/report" replace />} />
+              <Route path="/officer" element={<Navigate to="/app/officer" replace />} />
+              <Route path="/officer/batch" element={<Navigate to="/app/officer/batch" replace />} />
+              <Route path="/university" element={<Navigate to="/app/university" replace />} />
+              <Route path="/csr" element={<Navigate to="/app/corporate" replace />} />
+              <Route path="/dashboard" element={<Navigate to="/app/admin/telemetry" replace />} />
+
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </main>
+        <Footer />
+      </div>
+    </AuthProvider>
+  );
+}
+
+// Route splitters keep each workspace bundle separate (React.lazy boundaries).
+function OfficerRoute({ page }) {
+  const [Mod, setMod] = React.useState(null);
+  React.useEffect(() => { import('./app/officer/OfficerPages').then(setMod); }, []);
+  if (!Mod) return <WorkspaceFallback />;
+  if (page === 'batch') return <Mod.OfficerBatchPage />;
+  if (page === 'escalations') return <Mod.OfficerEscalationsPage />;
+  return <Mod.OfficerQueuePage />;
+}
+
+function UniversityRoute({ page }) {
+  const [Mod, setMod] = React.useState(null);
+  React.useEffect(() => { import('./app/university/UniversityPages').then(setMod); }, []);
+  if (!Mod) return <WorkspaceFallback />;
+  if (page === 'projects') return <Mod.UniversityProjectsPage />;
+  if (page === 'profile') return <Mod.UniversityProfilePage />;
+  return <Mod.UniversityInboxPage />;
+}
+
+function CorporateRoute({ page }) {
+  const [Mod, setMod] = React.useState(null);
+  React.useEffect(() => { import('./app/corporate/CorporatePages').then(setMod); }, []);
+  if (!Mod) return <WorkspaceFallback />;
+  if (page === 'portfolio') return <Mod.CorporatePortfolioPage />;
+  if (page === 'impact') return <Mod.CorporateImpactPage />;
+  return <Mod.CorporateOpportunitiesPage />;
+}
+
+function AdminRoute({ page }) {
+  const [Mod, setMod] = React.useState(null);
+  React.useEffect(() => { import('./app/admin/AdminPages').then(setMod); }, []);
+  if (!Mod) return <WorkspaceFallback />;
+  if (page === 'telemetry') return <Mod.AdminTelemetryPage />;
+  if (page === 'exports') return <Mod.AdminExportsPage />;
+  return <Mod.AdminOrgsPage />;
+}
