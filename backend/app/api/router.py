@@ -5,21 +5,31 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from pydantic import BaseModel
-from sqlalchemy import select
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import create_access_token, get_current_user, get_db, get_temporal_client, require_role
-from app.db.models import AuditLog, FundingLink, Industry, Problem, ProjectTeam, RouteAssignment, Submission, University
+from app.api.deps import ROLE_WORKSPACE, create_access_token, get_current_user, get_db, get_temporal_client, require_role
+from app.api.routes.admin import router as admin_router
+from app.api.routes.auth import router as auth_router
+from app.api.routes.events import router as events_router
+from app.db.models import AuditLog, FundingLink, Industry, MediaAsset, Milestone, Problem, ProjectTeam, RouteAssignment, Submission, University
+from app.services import auth as auth_svc
+from app.services import redis_client as redis_mod
+from app.services import storage as storage_svc
+from app.services.events import publish_event
 from app.services.outputs import append_audit, write_triage_csv
+from app.services.rate_limit import rate_limit
+from app.config import get_settings
 from temporalio.service import RPCStatusCode
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 api_router = APIRouter()
+api_router.include_router(auth_router)
+api_router.include_router(events_router)
+api_router.include_router(admin_router)
 
 # Officer decisions use uppercase API values; the triage workflow signal
 # contract uses lowercase values. OVERRIDE still routes the problem onward.
@@ -73,31 +83,45 @@ def classify_issue(text: str) -> tuple[str, int]:
 
 @api_router.post("/auth/login")
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Demo identity provider that returns a signed token for each portal role."""
+    """Identity provider: verified institutional passwords, heuristic demo fallback.
+
+    When the email matches a provisioned officer row, the bcrypt password is
+    enforced (401 on mismatch). Unknown emails keep the legacy demo heuristic
+    so unseeded environments still route to a workspace.
+    """
     if not payload.password:
         raise HTTPException(status_code=400, detail="Password is required")
     email = payload.email.lower()
     role = "citizen"
-    # Prefer exact workspace matches so seeded nodal/contact emails always land
-    # in the right portal; fall back to heuristic markers for ad-hoc demos.
-    matched_university = (await db.execute(
-        select(University).where(func.lower(University.nodal_contact_email) == email)
-    )).scalars().first()
+    officer_row = None
+    try:
+        officer_row = await auth_svc.verify_officer_password(db, email, payload.password)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    matched_university = None
     matched_industry = None
-    if matched_university is None:
-        matched_industry = (await db.execute(
-            select(Industry).where(func.lower(Industry.contact_email) == email)
+    if officer_row is not None:
+        role = "admin" if officer_row.role == "state_admin" else "officer"
+    else:
+        # Prefer exact workspace matches so seeded nodal/contact emails always
+        # land in the right portal; fall back to heuristic markers for demos.
+        matched_university = (await db.execute(
+            select(University).where(func.lower(University.nodal_contact_email) == email)
         )).scalars().first()
-    if "admin" in email or "officer" in email:
-        role = "admin" if "admin" in email else "officer"
-    elif matched_university is not None:
-        role = "university"
-    elif matched_industry is not None:
-        role = "industry"
-    elif any(marker in email for marker in ("uni", "iit", "nit", "prof", "iic", ".ac.in", ".edu")):
-        role = "university"
-    elif any(marker in email for marker in ("csr", "industry", "tata")):
-        role = "industry"
+        if matched_university is None:
+            matched_industry = (await db.execute(
+                select(Industry).where(func.lower(Industry.contact_email) == email)
+            )).scalars().first()
+        if "admin" in email or "officer" in email:
+            role = "admin" if "admin" in email else "officer"
+        elif matched_university is not None:
+            role = "university"
+        elif matched_industry is not None:
+            role = "industry"
+        elif any(marker in email for marker in ("uni", "iit", "nit", "prof", "iic", ".ac.in", ".edu")):
+            role = "university"
+        elif any(marker in email for marker in ("csr", "industry", "tata")):
+            role = "industry"
     # Portal data must be scoped to the signed-in university/industry workspace.
     organization_id = None
     organization_name = None
@@ -117,8 +141,17 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=503, detail="No industry workspace is configured")
         organization_id = str(industry.industry_id)
         organization_name = industry.name
-    token = create_access_token({"sub": email, "role": role, "organization_id": organization_id})
-    return {"access_token": token, "token_type": "bearer", "role": role, "organization_name": organization_name}
+    token = create_access_token(
+        {"sub": email, "role": role, "organization_id": organization_id, "workspace_type": ROLE_WORKSPACE.get(role, "citizen")}
+    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": role,
+        "workspace_type": ROLE_WORKSPACE.get(role, "citizen"),
+        "organization_id": organization_id,
+        "organization_name": organization_name,
+    }
 
 
 @api_router.post("/submissions", status_code=status.HTTP_202_ACCEPTED)
@@ -128,31 +161,64 @@ async def create_submission(
     language_pref: str = Form("english"),
     district: str | None = Form(None),
     block: str | None = Form(None),
+    geo_lat: float | None = Form(None),
+    geo_lng: float | None = Form(None),
     photo: UploadFile | None = File(None),
+    audio_note: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
+    _limited: bool = Depends(rate_limit(setting="RATE_LIMIT_SUBMIT_PER_MIN")),
 ):
     raw_text = raw_text.strip()
     if not raw_text:
         raise HTTPException(status_code=422, detail="Issue description cannot be blank")
     if len(raw_text) > 5000:
         raise HTTPException(status_code=422, detail="Issue description is too long (max 5000 characters)")
-    photo_name = None
+    attachments: list[tuple[str, bytes, str]] = []  # (kind, bytes, filename)
     if photo is not None:
         contents = await photo.read()
         if len(contents) > get_settings().MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="Photo exceeds the maximum allowed size of 5 MB")
-        photo_name = photo.filename
+        if contents:
+            attachments.append(("photo", contents, photo.filename or "photo"))
+    if audio_note is not None:
+        audio_bytes = await audio_note.read()
+        if len(audio_bytes) > get_settings().MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Audio note exceeds the maximum allowed size of 5 MB")
+        if audio_bytes:
+            attachments.append(("audio", audio_bytes, audio_note.filename or "audio-note.webm"))
     tracking_token = f"NITIVAYU-{datetime.now().year}-JH-{uuid.uuid4().hex[:6].upper()}"
     submission = Submission(
         raw_text=raw_text,
         geo_district=district,
         geo_block=block,
-        photo_url=photo_name,
+        geo_lat=geo_lat,
+        geo_lng=geo_lng,
+        photo_url=None,
         tracking_token=tracking_token,
         status="PENDING_TRIAGE",
     )
     db.add(submission)
     await db.flush()
+    # Persist evidence: object storage when enabled, local media mirror
+    # otherwise. First photo doubles as legacy `photo_url` for old consumers.
+    for kind, blob, filename in attachments:
+        content_type = "image/webp" if kind == "photo" else "audio/webm"
+        try:
+            stored_url = storage_svc.put_bytes(
+                storage_svc.object_key(f"submissions/{submission.submission_id}", filename), blob, content_type
+            )
+        except Exception:
+            logger.warning("Evidence store failed for submission %s", submission.submission_id, exc_info=True)
+            stored_url = f"inline://{kind}/{filename}"
+        if kind == "photo" and not submission.photo_url:
+            submission.photo_url = stored_url
+        db.add(MediaAsset(
+            submission_id=submission.submission_id,
+            kind=kind,
+            storage_url=stored_url,
+            size_bytes=len(blob),
+            moderation_status="pending",
+        ))
     category, severity = classify_issue(raw_text)
     problem = Problem(submission_id=submission.submission_id, title=raw_text[:120], summary=raw_text, category=category, severity_score=severity, status="PENDING_OFFICER_REVIEW")
     db.add(problem)
@@ -180,6 +246,12 @@ async def create_submission(
         await db.commit()
     except Exception:
         logger.warning("Temporal workflow start failed for submission %s; intake fallback retained", submission.submission_id, exc_info=True)
+    # Best-effort live fan-out (polling clients are unaffected if this fails).
+    try:
+        await publish_event(f"track:{tracking_token}", {"type": "submission.ingested", "data": {"tracking_token": tracking_token, "status": submission.status}})
+        await publish_event("public", {"type": "submission.ingested", "data": {"tracking_token": tracking_token, "district": district}})
+    except Exception:
+        logger.warning("SSE publish failed for submission %s", submission.submission_id, exc_info=True)
     return {"submission_id": str(submission.submission_id), "tracking_token": tracking_token, "status": submission.status}
 
 
@@ -309,6 +381,13 @@ async def decide_problem(problem_id: str, payload: DecisionRequest, request: Req
     db.add(AuditLog(entity_type="problem", entity_id=str(problem.problem_id), action=f"OFFICER_{payload.decision}", actor_id=user["user_id"], actor_role=user["role"], after_snapshot={"status": problem.status, "comments": payload.comments}))
     await db.commit()
     append_audit({"entity_type": "problem", "entity_id": str(problem.problem_id), "action": f"OFFICER_{payload.decision}", "actor_id": user["user_id"], "actor_role": user["role"]})
+    try:
+        if submission and submission.tracking_token:
+            await publish_event(f"track:{submission.tracking_token}", {"type": "officer.decision", "data": {"problem_id": str(problem.problem_id), "status": problem.status}})
+        if assignment:
+            await publish_event(f"org:{assignment.university_id}", {"type": "officer.decision", "data": {"problem_id": str(problem.problem_id), "status": problem.status}})
+    except Exception:
+        logger.warning("SSE publish failed for decision on %s", problem.problem_id, exc_info=True)
     # The database decision is authoritative; also release any running triage
     # workflow waiting on the officer signal. Signal failures must not undo the
     # recorded decision (e.g. workflow already completed or Temporal is down).
@@ -450,6 +529,14 @@ async def respond_assignment(assignment_id: str, payload: AssignmentResponse, db
             problem.status = "ACCEPTED"
         db.add(AuditLog(entity_type="problem", entity_id=str(assignment.problem_id), action="UNIVERSITY_ACCEPT", actor_id=user["user_id"], actor_role=user["role"], after_snapshot={"assignment_id": str(assignment.assignment_id)}))
     await db.commit()
+    try:
+        problem = await db.get(Problem, assignment.problem_id)
+        if problem:
+            submission = await db.get(Submission, problem.submission_id)
+            if submission and submission.tracking_token:
+                await publish_event(f"track:{submission.tracking_token}", {"type": "university.response", "data": {"assignment_id": str(assignment.assignment_id), "response": payload.response}})
+    except Exception:
+        logger.warning("SSE publish failed for assignment %s", assignment.assignment_id, exc_info=True)
     return {"status": "success"}
 
 
@@ -568,6 +655,17 @@ async def list_pledges(db: AsyncSession = Depends(get_db), user: dict = Depends(
 
 @api_router.get("/analytics/overview")
 async def analytics_overview(db: AsyncSession = Depends(get_db)):
+    import json
+
+    cache_key = "analytics:overview"
+    redis = redis_mod.get_redis()
+    if redis is not None:
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
     total_submissions = (await db.execute(select(func.count(Submission.submission_id)))).scalar_one()
     problems = (await db.execute(select(Problem.category, Problem.status, Problem.severity_score, Submission.geo_district).join(Submission, Problem.submission_id == Submission.submission_id, isouter=True))).all()
     category_distribution: dict[str, int] = {}
@@ -585,7 +683,7 @@ async def analytics_overview(db: AsyncSession = Depends(get_db)):
     total_problems = len(problems)
     active_universities = (await db.execute(select(func.count(University.university_id)))).scalar_one()
     total_pledged = (await db.execute(select(func.coalesce(func.sum(FundingLink.pledged_amount_inr), 0)))).scalar_one()
-    return {
+    body = {
         "total_submissions": total_submissions,
         "total_problems": total_problems,
         "triage_throughput": total_problems,
@@ -596,10 +694,29 @@ async def analytics_overview(db: AsyncSession = Depends(get_db)):
         "district_distribution": district_distribution,
         "severity_distribution": severity_distribution,
     }
+    if redis is not None:
+        try:
+            await redis.set(cache_key, json.dumps(body), ex=get_settings().ANALYTICS_CACHE_TTL_SECONDS)
+        except Exception:
+            pass
+    return body
 
 
 @api_router.post("/admin/reports/triage")
 async def export_triage_report(db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("admin", "officer"))):
     result = await db.execute(select(Problem).options(selectinload(Problem.submission)))
     rows = [{"submission_id": str(problem.submission_id), "timestamp_submitted": problem.created_at.isoformat(), "raw_text_preview": problem.summary[:200], "category": problem.category, "severity": problem.severity_score, "geo_district": problem.submission.geo_district if problem.submission else "", "triage_status": problem.status} for problem in result.scalars().all()]
-    return {"path": write_triage_csv(rows), "count": len(rows)}
+    path = write_triage_csv(rows)
+    body: dict = {"path": path, "count": len(rows)}
+    # Compliance hardening (§5.2): mirror exports to object storage with a
+    # signed download URL when enabled; local path stays for dev.
+    if storage_svc.enabled():
+        try:
+            from pathlib import Path as _Path
+
+            key = storage_svc.object_key("exports/triage", _Path(path).name or "triage.csv")
+            storage_svc.put_bytes(key, _Path(path).read_bytes(), "text/csv")
+            body["download_url"] = storage_svc.presigned_get(key)
+        except Exception:
+            logger.warning("Export object-storage mirror failed", exc_info=True)
+    return body

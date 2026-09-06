@@ -162,6 +162,63 @@ CREATE INDEX idx_problems_status ON problems(status);
 CREATE INDEX idx_submissions_district ON submissions(geo_district);
 CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 
+-- Phase-1 identity tables (nitivayu.md §6). Idempotent: safe to apply over
+-- an existing database (all statements are IF NOT EXISTS / conditional).
+CREATE TABLE IF NOT EXISTS users (
+    user_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    phone_encrypted BYTEA,
+    email_encrypted BYTEA,
+    password_hash VARCHAR(255),
+    workspace_type VARCHAR(50) NOT NULL DEFAULT 'citizen',
+    organization_id UUID,
+    district VARCHAR(100),
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+    otp_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    code_hash VARCHAR(255) NOT NULL,
+    channel VARCHAR(20) NOT NULL DEFAULT 'sms',
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    consumed_at TIMESTAMP WITH TIME ZONE,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS media_assets (
+    asset_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    submission_id UUID NOT NULL REFERENCES submissions(submission_id) ON DELETE CASCADE,
+    kind VARCHAR(20) NOT NULL,
+    storage_url VARCHAR(1024) NOT NULL,
+    thumbnail_url VARCHAR(1024),
+    transcript TEXT,
+    moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    size_bytes INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS org_invites (
+    invite_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID,
+    organization_type VARCHAR(50) NOT NULL,
+    organization_name VARCHAR(255),
+    email VARCHAR(255) NOT NULL,
+    token_hash VARCHAR(255) NOT NULL UNIQUE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    invited_by VARCHAR(255),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_organization ON users(organization_id);
+CREATE INDEX IF NOT EXISTS idx_otp_codes_user ON otp_codes(user_id);
+CREATE INDEX IF NOT EXISTS idx_media_assets_submission ON media_assets(submission_id);
+CREATE INDEX IF NOT EXISTS idx_org_invites_email ON org_invites(email);
+CREATE INDEX IF NOT EXISTS idx_org_invites_status ON org_invites(status);
+
 -- Minimum university network needed for routing in a fresh local deployment.
 INSERT INTO universities (name, short_code, district, geo_lat, geo_lng, domain_specializations, active_capacity, nodal_contact_email)
 VALUES
