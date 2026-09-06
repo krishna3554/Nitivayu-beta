@@ -183,3 +183,78 @@ class AuditLog(Base):
     ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     request_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+# ---------------------------------------------------------------------------
+# Phase-1 identity tables (nitivayu.md §6). Layered onto the existing schema;
+# nothing above is modified. JWT claim shape is unchanged
+# ({sub=user_id, role, organization_id}); only issuance gets rigorous.
+# ---------------------------------------------------------------------------
+
+class User(Base):
+    """One account, exactly one workspace type (nitivayu.md §1.2)."""
+    __tablename__ = 'users'
+
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Production note: these columns carry salted hashes for lookup plus
+    # encrypted blobs would require envelope encryption (KMS/Fernet). Until a
+    # KMS is wired, PII is stored as a one-way hash for lookup only — the
+    # plaintext value is never persisted (see services/auth.py).
+    phone_encrypted: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    email_encrypted: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    workspace_type: Mapped[str] = mapped_column(String(50), nullable=False, default='citizen')
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    district: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OtpCode(Base):
+    """Single-use phone-OTP challenges (10-minute TTL, capped attempts)."""
+    __tablename__ = 'otp_codes'
+
+    otp_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel: Mapped[str] = mapped_column(String(20), nullable=False, default='sms')
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class MediaAsset(Base):
+    """One-to-many evidence for a submission (photos + audio note).
+
+    Generalizes the legacy singular `submissions.photo_url`: keep `photo_url`
+    as the first-photo convenience field so existing consumers keep working.
+    """
+    __tablename__ = 'media_assets'
+
+    asset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    submission_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('submissions.submission_id', ondelete='CASCADE'), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # photo | audio
+    storage_url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    thumbnail_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    transcript: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    moderation_status: Mapped[str] = mapped_column(String(20), nullable=False, default='pending')  # pending | clean | flagged
+    size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class OrgInvite(Base):
+    """Admin-issued invites binding an email to an organization workspace."""
+    __tablename__ = 'org_invites'
+
+    invite_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    organization_type: Mapped[str] = mapped_column(String(50), nullable=False)  # university | industry
+    organization_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='pending')  # pending | accepted | expired | revoked
+    invited_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

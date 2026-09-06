@@ -49,9 +49,11 @@ export default function Login() {
     e.preventDefault();
     setLoading(true); setError(''); setNotice('');
     try {
-      await api.post('/auth/request-otp', { phone });
+      const { data } = await api.post('/auth/request-otp', { phone });
       setOtpSent(true);
-      setNotice(`We sent a 6-digit code to ${phone}. It expires in 10 minutes.`);
+      setNotice(data?.dev_code
+        ? `Demo code for ${phone}: ${data.dev_code} (dev mode — expires in 10 minutes).`
+        : `We sent a 6-digit code to ${phone}. It expires in 10 minutes.`);
     } catch (err) {
       if (err.response?.status === 404) {
         setError('Phone OTP sign-in is being connected (Phase 1). For this demo, use email sign-in or continue as a guest with your tracking token.');

@@ -24,9 +24,11 @@ export default function Signup() {
     e.preventDefault();
     setLoading(true); setError(''); setNotice('');
     try {
-      await api.post('/auth/request-otp', { phone, district });
+      const { data } = await api.post('/auth/request-otp', { phone, district });
       setOtpSent(true);
-      setNotice(`We sent a code to ${phone}. Enter it on the sign-in page to finish creating your account.`);
+      setNotice(data?.dev_code
+        ? `Demo code for ${phone}: ${data.dev_code} — enter it on the sign-in page to finish creating your account.`
+        : `We sent a code to ${phone}. Enter it on the sign-in page to finish creating your account.`);
     } catch (err) {
       if (err.response?.status === 404) {
         setError('Citizen OTP signup is being connected (Phase 1). You can already report with a tracking token — no account needed for the demo.');

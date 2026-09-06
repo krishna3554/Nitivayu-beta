@@ -39,7 +39,7 @@ export default function OAuthButtons({ next = '', mode = 'signin' }) {
       }
       setError(`Your ${provider.label} sign-in link came back empty. Use email ${mode === 'signup' ? 'registration' : 'sign-in'} for this demo.`);
     } catch (err) {
-      if (err.response?.status === 404) {
+      if (err.response?.status === 404 || err.response?.status === 501) {
         setError(`${provider.label} ${mode === 'signup' ? 'registration' : 'sign-in'} is being connected — use email ${mode === 'signup' ? 'registration' : 'sign-in'} for this demo.`);
       } else {
         setError(err.response?.data?.detail || `Could not reach ${provider.label}. Try again in a moment.`);

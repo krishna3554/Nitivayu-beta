@@ -15,8 +15,10 @@ export function AdminOrgsPage() {
     e.preventDefault();
     setSending(true); setNotice(''); setError('');
     try {
-      await api.post('/admin/invites', { email: form.email, organization_type: form.type, organization_name: form.org });
-      setNotice(`Invite sent to ${form.email}. It expires in 7 days and is tracked below.`);
+      const { data } = await api.post('/admin/invites', { email: form.email, organization_type: form.type, organization_name: form.org });
+      setNotice(data?.token
+        ? `Invite created for ${form.email} (expires in 7 days). Copy this one-time token into the invite email: ${data.token}`
+        : `Invite sent to ${form.email}. It expires in 7 days and is tracked below.`);
       setForm({ email: '', type: 'university', org: '' });
     } catch (err) {
       if (err.response?.status === 404) setError('Invite management connects with institutional hardening (Phase 6). Provision accounts directly in the database for this demo.');

@@ -2,10 +2,23 @@ import os
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql+asyncpg://nitivayu_user:nitivayu_secure_password@localhost:5432/nitivayu_db"
-)
+
+def _database_url() -> str:
+    # PgBouncer (transaction pooling) in front of Postgres when configured —
+    # the highest-leverage change for concurrent API replicas (§5.6).
+    # NOTE: asyncpg + PgBouncer requires prepared-statement care; SQLAlchemy
+    # asyncpg disables server-side statement caching issues via pool_pre_ping
+    # reconnects, and all queries here are ad-hoc (no named prepared use).
+    return os.getenv(
+        "PGBOUNCER_URL",
+        os.getenv(
+            "DATABASE_URL",
+            "postgresql+asyncpg://nitivayu_user:nitivayu_secure_password@localhost:5432/nitivayu_db",
+        ),
+    )
+
+
+DATABASE_URL = _database_url()
 
 # Create Async Engine
 engine = create_async_engine(

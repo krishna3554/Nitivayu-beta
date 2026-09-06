@@ -11,6 +11,7 @@ from temporalio.client import Client
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=False)
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -44,6 +45,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return {"user_id": user_id, "role": role, "organization_id": payload.get("organization_id")}
 
+async def get_current_user_optional(token: str | None = Depends(oauth2_scheme_optional)) -> dict | None:
+    """Lenient variant for rate-limit keying and public endpoints: None when anonymous."""
+    if not token:
+        return None
+    try:
+        return await get_current_user(token)
+    except HTTPException:
+        return None
+
 def require_role(*roles):
     async def role_checker(current_user: dict = Depends(get_current_user)):
         if current_user.get("role") not in roles:
@@ -54,6 +64,53 @@ def require_role(*roles):
             )
         return current_user
     return role_checker
+
+
+# Backend role -> frontend workspace namespace (nitivayu.md §1.3). Admins may
+# preview any workspace; everyone else is confined to their own shell.
+ROLE_WORKSPACE = {
+    "citizen": "citizen",
+    "officer": "officer",
+    "admin": "admin",
+    "university": "university",
+    "industry": "corporate",
+    "corporate": "corporate",
+    "csr": "corporate",
+}
+
+
+def workspace_of(user: dict) -> str:
+    explicit = (user.get("workspace_type") or "").lower()
+    if explicit in {"citizen", "officer", "admin", "university", "corporate"}:
+        return explicit
+    return ROLE_WORKSPACE.get((user.get("role") or "").lower(), "citizen")
+
+
+def require_workspace(*workspaces: str, org_scoped: bool = True):
+    """Single RBAC+ABAC gate replacing per-route ad-hoc checks (§5.5).
+
+    Admins pass any workspace gate (preview). Otherwise the caller's
+    workspace must be listed. With org_scoped=True, university/industry
+    callers must also carry an organization_id (mirrors the existing
+    inbox/opportunity scoping as a hard invariant).
+    """
+
+    async def checker(current_user: dict = Depends(get_current_user)):
+        workspace = workspace_of(current_user)
+        # Admins preview any workspace; everyone else must be listed.
+        if workspace != "admin" and workspace not in workspaces:
+            allowed = ", ".join(workspaces)
+            raise HTTPException(
+                status_code=403,
+                detail=f"This area belongs to the {allowed} workspace.",
+            )
+        if workspace == "admin":
+            return current_user
+        if org_scoped and workspace in {"university", "corporate"} and not current_user.get("organization_id"):
+            raise HTTPException(status_code=403, detail="This account is not linked to an organization workspace")
+        return current_user
+
+    return checker
 
 async def get_temporal_client(request: Request) -> Client:
     """Reuse the lifespan-managed client; connect per request only as a fallback."""
