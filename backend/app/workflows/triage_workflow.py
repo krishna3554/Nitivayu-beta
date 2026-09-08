@@ -1,6 +1,7 @@
 from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import TimeoutError as TemporalTimeoutError
 
 with workflow.unsafe.imports_passed_through():
     from app.activities.extract import extract_submission_activity
@@ -68,7 +69,7 @@ class ChallengeTriageWorkflow:
                 lambda: self.officer_decision is not None,
                 timeout=timedelta(hours=72)
             )
-        except workflow.TimeoutError:
+        except (TemporalTimeoutError, TimeoutError):
             self.officer_decision = "escalate"
 
         if self.officer_decision == "approve":
