@@ -21,7 +21,8 @@ def _factory() -> async_sessionmaker[AsyncSession]:
     global _engine, _session_factory
     if _session_factory is not None:
         return _session_factory
-    database_url = get_settings().DATABASE_URL
+    # Honor PGBOUNCER_URL like the API engine does (transaction pooling).
+    database_url = get_settings().effective_database_url
     if not database_url:
         raise RuntimeError("DATABASE_URL is not configured")
     _engine = create_async_engine(
