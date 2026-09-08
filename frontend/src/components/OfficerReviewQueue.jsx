@@ -1,30 +1,38 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Check, X, Inbox } from 'lucide-react';
 import { decideComplaint, getQueue } from '../services/api';
-import { EmptyState, ScoreBreakdown, SeverityBadge, SLACountdown, StatusBadge } from './ui';
+import { EmptyState, SeverityBadge, SLACountdown, StatusBadge } from './ui';
+import { useMetaConfig } from '../lib/meta';
 
 export default function OfficerReviewQueue() {
+  const navigate = useNavigate();
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [queue, setQueue] = useState([]);
+  const [total, setTotal] = useState(null);
   const [search, setSearch] = useState('');
   const [failed, setFailed] = useState(false);
-  const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { config } = useMetaConfig();
+
+  const openDetail = (id) => navigate(`/app/officer/review/${id}`);
 
   const loadQueue = async () => {
     try {
       const { data } = await getQueue();
-      setQueue(Array.isArray(data) ? data : []);
+      // WP-3: the endpoint returns {items, total}; tolerate the legacy bare array.
+      setQueue(Array.isArray(data) ? data : (data?.items ?? []));
+      setTotal(Array.isArray(data) ? null : (data?.total ?? null));
       setFailed(false);
     } catch (error) { console.error(error); setFailed(true); }
     finally { setLoading(false); }
   };
   useEffect(() => { loadQueue(); }, []);
 
-  // Keyboard shortcuts: j/k navigate, a approve, r reject, x multi-select.
+  // Keyboard shortcuts: j/k navigate, a approve, r reject, x multi-select, Enter opens detail.
   const [cursor, setCursor] = useState(0);
   const visibleQueue = useMemo(
-    () => queue.filter((item) => `${item.id} ${item.title} ${item.district} ${item.category}`.toLowerCase().includes(search.toLowerCase())),
+    () => queue.filter((item) => `${item.id} ${item.title} ${item.district} ${item.category} ${item.reporter_name || ''}`.toLowerCase().includes(search.toLowerCase())),
     [queue, search],
   );
   useEffect(() => {
@@ -36,6 +44,7 @@ export default function OfficerReviewQueue() {
       else if (e.key === 'a' && row) decide(row.id, 'APPROVE');
       else if (e.key === 'r' && row) decide(row.id, 'REJECT');
       else if (e.key === 'x' && row) toggleRow(row.id);
+      else if (e.key === 'Enter' && row) openDetail(row.id);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -88,7 +97,7 @@ export default function OfficerReviewQueue() {
       {/* Table — fixed layout so long titles ellipsis instead of colliding */}
       <div className="card overflow-hidden">
         <div className="scrollbar-thin max-h-[60vh] overflow-auto">
-          <table className="w-full min-w-[980px] table-fixed border-collapse text-left">
+          <table className="w-full min-w-[1100px] table-fixed border-collapse text-left">
             <thead className="sticky top-0 z-10 border-b border-border bg-white">
               <tr>
                 <th className="w-12 p-3 text-center">
@@ -98,6 +107,7 @@ export default function OfficerReviewQueue() {
                     checked={selectedRows.size === visibleQueue.length && visibleQueue.length > 0} />
                 </th>
                 <th className="type-caption p-3 text-zinc-400">Issue</th>
+                <th className="type-caption w-32 p-3 text-zinc-400">Reported by</th>
                 <th className="type-caption w-28 p-3 text-zinc-400">District</th>
                 <th className="type-caption w-24 p-3 text-zinc-400">Severity</th>
                 <th className="type-caption w-48 p-3 text-zinc-400">Top match</th>
@@ -113,16 +123,20 @@ export default function OfficerReviewQueue() {
               visibleQueue.map((row, i) => {
                 const top = row.top_matches?.[0];
                 return (
-                  <React.Fragment key={row.id}>
-                    <tr className={`${selectedRows.has(row.id) ? 'bg-primary-subtle/40' : i === cursor ? 'bg-surface-muted/60' : ''} transition-colors hover:bg-surface-muted/50`}>
-                      <td className="p-3 text-center">
+                    <tr
+                      key={row.id}
+                      onClick={(e) => { if (!e.target.closest('button,input,a,select')) openDetail(row.id); }}
+                      className={`cursor-pointer ${selectedRows.has(row.id) ? 'bg-primary-subtle/40' : i === cursor ? 'bg-surface-muted/60' : ''} transition-colors hover:bg-surface-muted/50`}
+                    >
+                      <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" aria-label={`Select ${row.id}`} className="cursor-pointer accent-[#6720FF]" checked={selectedRows.has(row.id)} onChange={() => toggleRow(row.id)} />
                       </td>
                       <td className="min-w-0 overflow-hidden p-3">
-                        <button type="button" onClick={() => setExpanded(expanded === row.id ? null : row.id)} className="block w-full min-w-0 text-left" aria-expanded={expanded === row.id}>
-                          <span className="block truncate text-sm font-medium-plus text-ink" title={row.title}>{row.title}</span>
-                          <span className="mt-0.5 block truncate font-mono text-xs text-zinc-400">{String(row.id).slice(0, 8)} · {row.category}</span>
-                        </button>
+                        <span className="block truncate text-sm font-medium-plus text-ink" title={`${row.title} — open full review`}>{row.title}</span>
+                        <span className="mt-0.5 block truncate font-mono text-xs text-zinc-400">{String(row.id).slice(0, 8)} · {row.category}</span>
+                      </td>
+                      <td className="overflow-hidden whitespace-nowrap p-3 text-sm text-ink-secondary">
+                        <span className="block truncate" title={row.reporter_name || 'Anonymous report'}>{row.reporter_name || '—'}</span>
                       </td>
                       <td className="whitespace-nowrap p-3 text-sm text-ink-secondary">{row.district}</td>
                       <td className="whitespace-nowrap p-3"><SeverityBadge value={row.severity} /></td>
@@ -130,9 +144,9 @@ export default function OfficerReviewQueue() {
                         <span className="block truncate font-medium-plus text-ink" title={top?.university_name || 'Awaiting match'}>{top?.university_name || 'Awaiting match'}</span>
                         {top && <span className="font-mono text-xs text-primary">{Number(top.match_score).toFixed(3)}</span>}
                       </td>
-                      <td className="whitespace-nowrap p-3"><SLACountdown slaHoursRemaining={row.sla_hours_remaining} totalHours={72} /></td>
+                      <td className="whitespace-nowrap p-3"><SLACountdown slaHoursRemaining={row.sla_hours_remaining} totalHours={config.officer_sla_hours} /></td>
                       <td className="whitespace-nowrap p-3"><StatusBadge status={row.status} /></td>
-                      <td className="sticky right-0 whitespace-nowrap bg-white p-3 text-right [box-shadow:-12px_0_16px_-12px_rgba(0,0,0,0.25)]">
+                      <td className="sticky right-0 whitespace-nowrap bg-white p-3 text-right [box-shadow:-12px_0_16px_-12px_rgba(0,0,0,0.25)]" onClick={(e) => e.stopPropagation()}>
                         <span className="inline-flex justify-end gap-2">
                           <button onClick={() => decide(row.id, 'APPROVE')} className="rounded-md border border-transparent p-1.5 text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50" title="Approve & route" aria-label={`Approve ${row.title}`}>
                             <Check className="h-4 w-4" />
@@ -143,16 +157,6 @@ export default function OfficerReviewQueue() {
                         </span>
                       </td>
                     </tr>
-                    {expanded === row.id && top && (
-                      <tr className="bg-surface-muted/40">
-                        <td />
-                        <td colSpan={7} className="p-4">
-                          <p className="type-caption text-zinc-400">Why this match</p>
-                          <div className="mt-2 max-w-md"><ScoreBreakdown breakdown={top.score_breakdown} total={top.match_score} /></div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
                 );
               })
               )}
@@ -163,9 +167,10 @@ export default function OfficerReviewQueue() {
           )}
         </div>
         <div className="flex items-center justify-between border-t border-border bg-white px-4 py-2.5 text-xs text-zinc-500">
-          <span>{visibleQueue.length} in queue · virtualized for 10k+ rows</span>
+          <span>{visibleQueue.length} in queue{total != null ? ` · ${total} total pending review` : ''}</span>
           <span className="hidden gap-3 sm:flex">
             <span><Kbd>j</Kbd>/<Kbd>k</Kbd> navigate</span>
+            <span><Kbd>Enter</Kbd> open</span>
             <span><Kbd>a</Kbd> approve</span>
             <span><Kbd>r</Kbd> reject</span>
             <span><Kbd>x</Kbd> select</span>
@@ -190,6 +195,7 @@ function TableSkeleton({ rows = 8 }) {
           <td className="p-3"><span className="block h-4 w-16 rounded-sm bg-surface-muted" /></td>
           <td className="p-3"><span className="block h-5 w-14 rounded-md bg-surface-muted" /></td>
           <td className="p-3"><span className="block h-4 w-28 rounded-sm bg-surface-muted" /></td>
+          <td className="p-3"><span className="block h-5 w-20 rounded-md bg-surface-muted" /></td>
           <td className="p-3"><span className="block h-5 w-20 rounded-md bg-surface-muted" /></td>
           <td className="p-3"><span className="block h-5 w-20 rounded-md bg-surface-muted" /></td>
           <td className="p-3"><span className="ml-auto block h-7 w-16 rounded-md bg-surface-muted" /></td>

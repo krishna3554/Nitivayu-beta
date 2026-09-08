@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, ImagePlus, Mic, MapPin, X, Loader2, Navigation } from 'lucide-react';
+import { fetchMetaConfig } from '../../lib/meta';
 
 const MAX_CHARS = 5000;
 const MAX_AUDIO_SECONDS = 60;
@@ -53,7 +54,15 @@ export function loadDraft(key) {
  * Every capture surface degrades gracefully — the form never hard-blocks
  * on a denied permission. Mobile-first, screen-reader labelled.
  */
-export default function EvidenceComposer({ onSubmit, submitting, serverError }) {
+export default function EvidenceComposer({ onSubmit, submitting, serverError, initialName = '', onEdit }) {
+  // District list is served by /meta/config (shared module cache); the
+  // bundled constant is the offline fallback, not the source of truth.
+  const [districts, setDistricts] = useState(JHARKHAND_DISTRICTS);
+  useEffect(() => {
+    let live = true;
+    fetchMetaConfig().then((c) => { if (live && c.districts?.length) setDistricts(c.districts); });
+    return () => { live = false; };
+  }, []);
   const saved = React.useMemo(() => loadDraft('nitivayu_composer_draft'), []);
   const [text, setText] = useState(saved?.text || '');
   const [language, setLanguage] = useState(saved?.language || 'hinglish');
@@ -64,6 +73,11 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
   const [audioUrl, setAudioUrl] = useState(null);
   const [geo, setGeo] = useState(saved?.geo || null);
   const [geoStatus, setGeoStatus] = useState('idle'); // idle|locating|ok|denied|unsupported
+  const [geoEdited, setGeoEdited] = useState(false); // true once the citizen corrects coordinates by hand
+  const [reporterName, setReporterName] = useState(initialName);
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [notifyConsent, setNotifyConsent] = useState(false);
   const [sheet, setSheet] = useState(null); // photo|camera|audio|location
   const [recording, setRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
@@ -191,11 +205,10 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!valid || submitting) return;
-    // NOTE (backend media pipeline, Phase 4): today this submits one multipart
-    // request the current API accepts. When pre-signed object-storage uploads
-    // land, this same payload shape becomes step 1 (202 + token), with media
-    // attaching asynchronously — the composer UI does not change.
-    onSubmit?.({ text: text.trim(), language, district, block, geo, photos, audioBlob });
+    // Up to 4 photos + 1 audio note ride one multipart request; the API
+    // stores them and the media pipeline (scan → normalize → transcribe)
+    // processes them asynchronously without blocking triage.
+    onSubmit?.({ text: text.trim(), language, district, block, reporterName: reporterName.trim().slice(0, 120), contactEmail: contactEmail.trim(), contactPhone: contactPhone.trim(), notifyConsent, geo, geo_source: geo ? (geoEdited ? 'manual' : 'gps') : 'district', photos, audioBlob });
   };
 
   const chip = (id, Icon, label, count, disabled) => (
@@ -222,7 +235,7 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
         rows={5}
         required
         value={text}
-        onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS))}
+        onChange={(e) => { setText(e.target.value.slice(0, MAX_CHARS)); onEdit?.(); }}
         placeholder="E.g. Garhwa block ke handpump mein fluoride aur peela rang aa raha hai…"
         className="input mt-2 !text-[20px] resize-none"
         aria-describedby="composer-count"
@@ -298,16 +311,32 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
       {/* Location summary + district/block fallback (always works) */}
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label htmlFor="composer-district" className="type-label-sm">District</label>
-          <select id="composer-district" value={district} onChange={(e) => setDistrict(e.target.value)} className="input mt-1.5">
-            {JHARKHAND_DISTRICTS.map((d) => <option key={d}>{d}</option>)}
-          </select>
+          <label htmlFor="composer-name" className="type-label-sm">Your name <span className="font-normal text-zinc-400">(optional — shown to the reviewing officer)</span></label>
+          <input id="composer-name" value={reporterName} maxLength={120} onChange={(e) => setReporterName(e.target.value)} placeholder="e.g. Ramesh Kumar" className="input mt-1.5" />
         </div>
         <div>
+          <label htmlFor="composer-district" className="type-label-sm">District</label>
+          <select id="composer-district" value={district} onChange={(e) => setDistrict(e.target.value)} className="input mt-1.5">
+            {districts.map((d) => <option key={d}>{d}</option>)}
+          </select>
+        </div>
+        <div className="sm:col-span-2">
           <label htmlFor="composer-block" className="type-label-sm">Block / area</label>
           <input id="composer-block" value={block} onChange={(e) => setBlock(e.target.value)} placeholder="e.g. Garhwa Sadar" className="input mt-1.5" />
         </div>
+        <div>
+          <label htmlFor="composer-email" className="type-label-sm">Email for updates <span className="font-normal text-zinc-400">(optional)</span></label>
+          <input id="composer-email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="you@example.com" className="input mt-1.5" />
+        </div>
+        <div>
+          <label htmlFor="composer-phone" className="type-label-sm">Phone for SMS updates <span className="font-normal text-zinc-400">(optional)</span></label>
+          <input id="composer-phone" type="tel" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+91 98765 43210" className="input mt-1.5" />
+        </div>
       </div>
+      <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-zinc-600">
+        <input type="checkbox" checked={notifyConsent} onChange={(e) => setNotifyConsent(e.target.checked)} className="mt-1 accent-[#6720FF]" />
+        <span>Send me email/SMS updates on this report (officer decision, university acceptance, milestones).</span>
+      </label>
       <p className="type-body-sm mt-2 text-zinc-500">
         {geoStatus === 'ok' && geo ? <>GPS attached: <span className="font-mono">{geo.lat}, {geo.lng}</span> — your report reaches an officer within 72 hours.</>
           : geoStatus === 'locating' ? 'Detecting your GPS location…'
@@ -316,7 +345,7 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
 
       {serverError && <p role="alert" className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{serverError}</p>}
 
-      <button type="submit" disabled={!valid || submitting || compressing} className="btn-primary mt-5 flex w-full items-center justify-center">
+      <button type="submit" disabled={!valid || submitting || compressing} className="btn-primary mt-5 flex w-full items-center justify-center disabled:opacity-60">
         {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting your report…</> : compressing ? 'Preparing photos…' : 'Submit report'}
       </button>
       <p className="type-body-sm mt-2 text-center text-zinc-400">You get a tracking token immediately — photos and audio attach in the background.</p>
@@ -372,10 +401,10 @@ export default function EvidenceComposer({ onSubmit, submitting, serverError }) 
           </button>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <label className="type-label-sm">Latitude
-              <input type="number" step="any" value={geo?.lat ?? ''} onChange={(e) => setGeo((g) => ({ lat: Number(e.target.value), lng: g?.lng ?? 0 }))} placeholder="23.4123" className="input mt-1" />
+              <input type="number" step="any" value={geo?.lat ?? ''} onChange={(e) => { setGeoEdited(true); setGeo((g) => ({ lat: Number(e.target.value), lng: g?.lng ?? 0 })); }} placeholder="23.4123" className="input mt-1" />
             </label>
             <label className="type-label-sm">Longitude
-              <input type="number" step="any" value={geo?.lng ?? ''} onChange={(e) => setGeo((g) => ({ lat: g?.lat ?? 0, lng: Number(e.target.value) }))} placeholder="85.4399" className="input mt-1" />
+              <input type="number" step="any" value={geo?.lng ?? ''} onChange={(e) => { setGeoEdited(true); setGeo((g) => ({ lat: g?.lat ?? 0, lng: Number(e.target.value) })); }} placeholder="85.4399" className="input mt-1" />
             </label>
           </div>
           <p className="type-body-sm mt-3 text-zinc-500">Drag-to-correct map arrives with the MapLibre integration (Phase 3) — for now, edit the coordinates or rely on District + Block, which always routes correctly.</p>
