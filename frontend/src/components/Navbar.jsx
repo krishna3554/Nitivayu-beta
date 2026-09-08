@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Menu, X, Search } from 'lucide-react';
+import { Menu, X, Search, ChevronDown, LogOut, LayoutDashboard, FolderOpen } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 
 const NAV = [
@@ -9,6 +9,21 @@ const NAV = [
   { to: '/about', label: 'About' },
   { to: '/track', label: 'Track' },
 ];
+
+// Same workspace language as the AppShell sidebar titles.
+const WORKSPACE_TITLES = {
+  citizen: 'Citizen App',
+  officer: 'Officer Console',
+  university: 'University Workspace',
+  corporate: 'Corporate Workspace',
+  admin: 'Admin Control Plane',
+};
+
+function initialsFor(name) {
+  const words = String(name || '').split(/\s+/).filter(Boolean);
+  if (!words.length) return '?';
+  return (words[0][0] + (words[1]?.[0] || '')).toUpperCase();
+}
 
 /** Fireworks navbar: 73px, white, sticky, 1px hairline, 4 nav links + one violet CTA. */
 export default function Navbar() {
@@ -64,10 +79,13 @@ export default function Navbar() {
             </span>
           </form>
           {session ? (
-            <>
-              <Link to={workspaceHome()} className="btn-primary !py-2.5">Open workspace</Link>
-              <button type="button" onClick={logout} className="type-nav-link text-zinc-500 hover:text-ink">Sign out</button>
-            </>
+            <AccountMenu
+              displayName={session.displayName || session.orgName || WORKSPACE_TITLES[session.workspace] || 'Workspace'}
+              workspaceLabel={WORKSPACE_TITLES[session.workspace] || 'Workspace'}
+              workspaceHome={workspaceHome()}
+              showReports={(session.workspace || '') === 'citizen'}
+              onLogout={logout}
+            />
           ) : (
             <>
               <Link to="/login" className="type-nav-link text-ink hover:text-primary">Sign in</Link>
@@ -96,7 +114,10 @@ export default function Navbar() {
             ))}
             {!session && <Link to="/login" onClick={() => setOpen(false)} className="type-nav-link rounded-md px-2 py-2.5 text-ink">Sign in</Link>}
             {session ? (
-              <Link to={workspaceHome()} onClick={() => setOpen(false)} className="btn-primary mt-2 text-center">Open workspace</Link>
+              <>
+                <Link to={workspaceHome()} onClick={() => setOpen(false)} className="type-nav-link rounded-md px-2 py-2.5 text-ink">My workspace</Link>
+                <button type="button" onClick={() => { logout(); setOpen(false); }} className="type-nav-link rounded-md px-2 py-2.5 text-left text-zinc-500">Sign out</button>
+              </>
             ) : (
               <Link to="/signup" onClick={() => setOpen(false)} className="btn-primary mt-2 text-center">Sign up</Link>
             )}
@@ -104,5 +125,59 @@ export default function Navbar() {
         </div>
       )}
     </header>
+  );
+}
+
+/** Workspace-aware account menu: avatar + workspace name, dropdown on click. */
+function AccountMenu({ displayName, workspaceLabel, workspaceHome, showReports, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const onPointer = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={`Account menu for ${displayName}`}
+        className="flex items-center gap-2 rounded-md border border-transparent p-1.5 pr-2 transition-colors hover:border-border hover:bg-surface-muted"
+      >
+        <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-md bg-primary-subtle text-xs font-medium-plus text-primary">
+          {initialsFor(displayName)}
+        </span>
+        <span className="max-w-36 truncate text-sm font-medium-plus text-ink">{displayName}</span>
+        <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div role="menu" aria-label="Account" className="absolute right-0 z-50 mt-2 w-64 rounded-md border border-border bg-white p-2 shadow-card">
+          <p className="type-caption px-3 pb-1 pt-2 text-zinc-400">{workspaceLabel}</p>
+          <Link to={workspaceHome} onClick={() => setOpen(false)} role="menuitem" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium-plus text-ink hover:bg-surface-muted">
+            <LayoutDashboard className="h-4 w-4 text-zinc-400" /> My workspace
+          </Link>
+          {showReports && (
+            <Link to="/app/citizen/reports" onClick={() => setOpen(false)} role="menuitem" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium-plus text-ink hover:bg-surface-muted">
+              <FolderOpen className="h-4 w-4 text-zinc-400" /> My reports
+            </Link>
+          )}
+          <div className="my-1 border-t border-border" />
+          <button type="button" onClick={() => { setOpen(false); onLogout(); }} role="menuitem" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium-plus text-zinc-500 hover:bg-surface-muted hover:text-ink">
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
