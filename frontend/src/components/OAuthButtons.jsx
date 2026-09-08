@@ -1,26 +1,28 @@
 import React, { useState } from 'react';
-import { Chrome, Facebook, Loader2 } from 'lucide-react';
+import { Chrome, Loader2 } from 'lucide-react';
 import api from '../services/api';
 
+// Google-only deployment (owner U4): Facebook Graph v18.0 is retired, so the
+// button is removed. The backend still answers 501 for /facebook/url with a
+// "retired" message for old links.
 const PROVIDERS = [
   { id: 'google', label: 'Google', Icon: Chrome },
-  { id: 'facebook', label: 'Facebook', Icon: Facebook },
 ];
 
 /**
- * OAuthButtons — "Continue with Google / Facebook".
+ * OAuthButtons — "Continue with Google".
  *
  * Backend-mediated flow (nothing secret ever touches the browser):
  *   1. Frontend asks the API for a provider authorization URL:
- *        GET /api/v1/auth/oauth/{google|facebook}/url?next=/app/citizen
+ *        GET /api/v1/auth/oauth/google/url?next=/app/citizen
  *   2. Browser redirects there; the provider sends the user back to the
- *      backend callback, which finishes with a redirect to
- *        /login?token=<jwt>&role=<role>&org=<org>&next=<next>
- *   3. Login consumes those params via `consumeOAuthCallback` and opens
+ *      backend callback, which finishes with a one-time code redirect to
+ *        /login?code=<one-time>&next=<next>   (JWT never in query/logs, B2.7)
+ *   3. Login exchanges the code once via POST /auth/oauth/consume and opens
  *      the correct workspace.
  *
- * Until the backend ships those endpoints, the buttons degrade with an
- * honest notice instead of a dead redirect.
+ * Until GOOGLE_* is configured the backend answers 501 and the buttons
+ * degrade with an honest notice instead of a dead redirect.
  */
 export default function OAuthButtons({ next = '', mode = 'signin' }) {
   const [busy, setBusy] = useState(null);
@@ -39,7 +41,7 @@ export default function OAuthButtons({ next = '', mode = 'signin' }) {
       }
       setError(`Your ${provider.label} sign-in link came back empty. Use email ${mode === 'signup' ? 'registration' : 'sign-in'} for this demo.`);
     } catch (err) {
-      if (err.response?.status === 404) {
+      if (err.response?.status === 404 || err.response?.status === 501) {
         setError(`${provider.label} ${mode === 'signup' ? 'registration' : 'sign-in'} is being connected — use email ${mode === 'signup' ? 'registration' : 'sign-in'} for this demo.`);
       } else {
         setError(err.response?.data?.detail || `Could not reach ${provider.label}. Try again in a moment.`);
@@ -51,7 +53,7 @@ export default function OAuthButtons({ next = '', mode = 'signin' }) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Continue with a social account">
+      <div className="grid grid-cols-1 gap-2" role="group" aria-label="Continue with a social account">
         {PROVIDERS.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -61,7 +63,7 @@ export default function OAuthButtons({ next = '', mode = 'signin' }) {
             className="btn-secondary flex items-center justify-center gap-2 !py-2.5 disabled:opacity-60"
           >
             {busy === id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" aria-hidden />}
-            {label}
+            Continue with {label}
           </button>
         ))}
       </div>
@@ -75,11 +77,32 @@ export default function OAuthButtons({ next = '', mode = 'signin' }) {
   );
 }
 
-/** Reads the backend OAuth callback params (?token=&role=&org=&error=). */
+/** Exchange a one-time OAuth `code` for the session (B2.7). Single-use, 60s TTL. */
+export async function exchangeOAuthCode(code) {
+  const { data } = await api.post('/auth/oauth/consume', { code });
+  if (!data?.access_token) throw new Error('Sign-in code did not return a session.');
+  return {
+    session: {
+      token: data.access_token,
+      role: data.role || data.workspace_type || 'citizen',
+      workspace: undefined, // resolved by loginWithSession via roleToWorkspace
+      displayName: data.display_name || data.organization_name || '',
+      orgName: data.organization_name || '',
+      organizationId: data.organization_id || null,
+      next: data.next || '',
+    },
+  };
+}
+
+/** Reads the backend OAuth callback params (?code= new, ?token= legacy, ?error=). */
 export function consumeOAuthCallback(searchParams) {
   if (searchParams.get('error')) {
     return { error: searchParams.get('error_description') || 'Your social sign-in was not completed. Try email sign-in instead.' };
   }
+  const code = searchParams.get('code');
+  if (code) return { code };
+  // Legacy compat: pre-B2.7 links carried ?token=&role=&org=. Accept them once
+  // so in-flight sign-ins survive the deploy, then the backend stops sending them.
   const token = searchParams.get('token');
   if (!token) return null;
   return {

@@ -29,15 +29,28 @@ export function workspaceHome(workspace) {
   }
 }
 
+function safeStorage() {
+  try {
+    localStorage.getItem('__probe');
+    return localStorage;
+  } catch { return null; }
+}
+
 function loadSession() {
   try {
-    const raw = localStorage.getItem('nitivayu_session');
+    const store = safeStorage();
+    if (!store) return null;
+    const raw = store.getItem('nitivayu_session');
     if (!raw) {
-      // Back-compat: legacy token-only storage assumed an officer demo login.
-      const legacy = localStorage.getItem('nitivayu_token');
-      return legacy ? { token: legacy, role: 'officer', workspace: 'officer', orgName: '' } : null;
+      // Back-compat: legacy token-only storage. B3 drops the old officer
+      // default — an orphan token is treated as citizen and re-resolved on
+      // next login instead of opening the officer workspace.
+      const legacy = store.getItem('nitivayu_token');
+      return legacy ? { token: legacy, role: 'citizen', workspace: 'citizen', orgName: '', organizationId: null } : null;
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.token) return null;
+    return parsed;
   } catch { return null; }
 }
 
@@ -50,15 +63,17 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(loadSession);
 
   useEffect(() => {
+    const store = safeStorage();
+    if (!store) return;
     try {
       if (session) {
-        localStorage.setItem('nitivayu_session', JSON.stringify(session));
-        if (session.token) localStorage.setItem('nitivayu_token', session.token);
+        store.setItem('nitivayu_session', JSON.stringify(session));
+        if (session.token) store.setItem('nitivayu_token', session.token);
       } else {
-        localStorage.removeItem('nitivayu_session');
-        localStorage.removeItem('nitivayu_token');
+        store.removeItem('nitivayu_session');
+        store.removeItem('nitivayu_token');
       }
-    } catch { /* private mode */ }
+    } catch { /* private mode / quota */ }
   }, [session]);
 
   const login = useCallback(async ({ email, password }) => {
@@ -68,6 +83,7 @@ export function AuthProvider({ children }) {
       token: data.access_token,
       role: data.role || data.workspace_type || 'citizen',
       workspace,
+      displayName: data.display_name || data.organization_name || '',
       orgName: data.organization_name || '',
       organizationId: data.organization_id || null,
     };
@@ -77,7 +93,8 @@ export function AuthProvider({ children }) {
 
   // Citizen OTP / invite flows land here in Phase 1/6; shape is identical.
   const loginWithSession = useCallback((next) => {
-    const normalized = { ...next, workspace: next.workspace || roleToWorkspace(next.role) };
+    const normalized = { ...next, workspace: next.workspace || roleToWorkspace(next.role), displayName: next.displayName || next.display_name || '' };
+    delete normalized.display_name;
     setSession(normalized);
     return normalized;
   }, []);

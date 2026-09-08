@@ -1,36 +1,43 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Smartphone, Ticket, Mail, Lock, User } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import OAuthButtons from './OAuthButtons';
 import api from '../services/api';
 import { JHARKHAND_DISTRICTS } from './ui/EvidenceComposer';
+import { fetchMetaConfig } from '../lib/meta';
 
 /** Signup — citizen self-serve (phone OTP or email) + institutional invite acceptance. */
 export default function Signup() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { loginWithSession } = useAuth();
-  const [tab, setTab] = useState('phone');
+  const [tab, setTab] = useState(params.get('invite') ? 'invite' : 'phone');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [phone, setPhone] = useState('');
   const [district, setDistrict] = useState('Ranchi');
+  const [districts, setDistricts] = useState(JHARKHAND_DISTRICTS);
   const [otpSent, setOtpSent] = useState(false);
   const [emailForm, setEmailForm] = useState({ name: '', email: '', password: '' });
-  const [invite, setInvite] = useState({ token: '', email: '', password: '', name: '' });
+  const [invite, setInvite] = useState({ token: params.get('invite') || '', email: '', password: '', name: '' });
+
+  useEffect(() => {
+    fetchMetaConfig().then((c) => { if (c.districts?.length) setDistricts(c.districts); });
+  }, []);
 
   const requestSignupOtp = async (e) => {
     e.preventDefault();
     setLoading(true); setError(''); setNotice('');
     try {
-      await api.post('/auth/request-otp', { phone, district });
+      const { data } = await api.post('/auth/request-otp', { phone, district });
       setOtpSent(true);
-      setNotice(`We sent a code to ${phone}. Enter it on the sign-in page to finish creating your account.`);
+      setNotice(data?.dev_code
+        ? `Demo code for ${phone}: ${data.dev_code} — enter it on the sign-in page to finish creating your account.`
+        : `We sent a code to ${phone}. Enter it on the sign-in page to finish creating your account.`);
     } catch (err) {
-      if (err.response?.status === 404) {
-        setError('Citizen OTP signup is being connected (Phase 1). You can already report with a tracking token — no account needed for the demo.');
-      } else setError(err.response?.data?.detail || 'Could not start signup. Try again in a minute.');
+      setError(err.response?.data?.detail || 'Could not start signup. Try again in a minute.');
     } finally { setLoading(false); }
   };
 
@@ -44,6 +51,7 @@ export default function Signup() {
         loginWithSession({
           token: data.access_token,
           role: data.role || data.workspace_type || 'citizen',
+          displayName: data.display_name || emailForm.name || '',
           orgName: data.organization_name || '',
           organizationId: data.organization_id || null,
         });
@@ -53,11 +61,7 @@ export default function Signup() {
         setTimeout(() => navigate('/login'), 1500);
       }
     } catch (err) {
-      if (err.response?.status === 404) {
-        setError('Email registration is being connected (Phase 1). For this demo, report with a tracking token or use phone OTP once it lands.');
-      } else {
-        setError(err.response?.data?.detail || 'Could not create your account. Try again in a moment.');
-      }
+      setError(err.response?.data?.detail || 'Could not create your account. Try again in a moment.');
     } finally { setLoading(false); }
   };
 
@@ -69,9 +73,7 @@ export default function Signup() {
       setNotice('Invite accepted. Sign in with your new credentials.');
       setTimeout(() => navigate('/login'), 1200);
     } catch (err) {
-      if (err.response?.status === 404) {
-        setError('Invite acceptance connects with institutional hardening (Phase 6). Ask your admin to provision your account directly for now.');
-      } else setError(err.response?.data?.detail || 'That invite did not match. Check the token and email.');
+      setError(err.response?.data?.detail || 'That invite did not match. Check the token and email.');
     } finally { setLoading(false); }
   };
 
@@ -106,7 +108,7 @@ export default function Signup() {
             <div>
               <label htmlFor="su-district" className="type-label-sm">Home district <span className="text-zinc-400">(optional — speeds up routing)</span></label>
               <select id="su-district" value={district} onChange={(e) => setDistrict(e.target.value)} className="input mt-1.5">
-                {JHARKHAND_DISTRICTS.map((d) => <option key={d}>{d}</option>)}
+                {districts.map((d) => <option key={d}>{d}</option>)}
               </select>
             </div>
             {error && <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
@@ -141,7 +143,7 @@ export default function Signup() {
             <div>
               <label htmlFor="su-edistrict" className="type-label-sm">Home district <span className="text-zinc-400">(optional — speeds up routing)</span></label>
               <select id="su-edistrict" value={district} onChange={(e) => setDistrict(e.target.value)} className="input mt-1.5">
-                {JHARKHAND_DISTRICTS.map((d) => <option key={d}>{d}</option>)}
+                {districts.map((d) => <option key={d}>{d}</option>)}
               </select>
             </div>
             {error && <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
