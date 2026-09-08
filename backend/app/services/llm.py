@@ -1,10 +1,11 @@
 """OpenRouter-backed issue extraction with an explicit local fallback.
 
-The checked-in ``app/cache/llm_cache.json`` entries use display-style labels
-(e.g. ``"High"``), so every extraction result is normalized to the workflow
-schema before it is returned. When no API key is configured the activity uses
-the deterministic local extractor and marks ``source="local_fallback"``; it
-never pretends an AI call succeeded.
+Successful extractions are cached in Redis (``llm:cache:<sha256>``, 7-day TTL)
+keyed by the SHA-256 digest of ``model + redacted text`` so repeated reports of
+the same issue skip the paid API call. Every extraction result is normalized to
+the workflow schema before it is returned. When no API key is configured the
+activity uses the deterministic local extractor and marks
+``source="local_fallback"``; it never pretends an AI call succeeded.
 """
 
 from __future__ import annotations
@@ -13,12 +14,12 @@ import hashlib
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.config import get_settings
+from app.services import redis_client as redis_mod
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,34 @@ _CATEGORY_KEYWORDS = {
 
 _SEVERITY_WORDS = {"critical": 5, "severe": 5, "urgent": 4, "danger": 4, "high": 4, "broken": 4, "medium": 3, "moderate": 3, "low": 2, "minor": 2}
 
-_CACHE_PATH = Path(__file__).resolve().parent.parent / "cache" / "llm_cache.json"
+_CACHE_TTL_SECONDS = 7 * 24 * 3600  # 7 days
+
+
+async def _cache_lookup(cache_key: str) -> dict | None:
+    """Redis-backed extraction cache; never raises, returns None on any miss."""
+    redis = redis_mod.get_redis()
+    if redis is None:
+        return None
+    try:
+        raw = await redis.get(f"llm:cache:{cache_key}")
+        if not raw:
+            return None
+        entry = json.loads(raw)
+        return entry if isinstance(entry, dict) else None
+    except Exception:
+        logger.warning("LLM cache lookup failed", exc_info=True)
+        return None
+
+
+async def _cache_store(cache_key: str, result: dict) -> None:
+    """Persist a validated extraction; failures are logged, never raised."""
+    redis = redis_mod.get_redis()
+    if redis is None:
+        return
+    try:
+        await redis.set(f"llm:cache:{cache_key}", json.dumps(result), ex=_CACHE_TTL_SECONDS)
+    except Exception:
+        logger.warning("LLM cache store failed", exc_info=True)
 
 
 def redact_pii(text: str) -> str:
@@ -102,17 +130,6 @@ def heuristic_severity(text: str) -> int:
     return 3
 
 
-def _cache_lookup(cache_key: str) -> dict | None:
-    try:
-        entries = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        logger.warning("LLM cache unreadable: %s", exc)
-        return None
-    if not isinstance(entries, dict):
-        return None
-    return entries.get(cache_key) if isinstance(entries.get(cache_key), dict) else None
-
-
 def _validate_extraction(payload: Any, *, source: str) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("Extraction result must be a JSON object")
@@ -159,16 +176,17 @@ async def extract_issue_details(raw_text: str) -> dict:
     if not cleaned:
         raise ValueError("Issue description cannot be blank")
     settings = get_settings()
+    cache_key = _cache_key(cleaned, settings.OPENROUTER_MODEL)
+    if settings.LLM_CACHE:
+        cached = await _cache_lookup(cache_key)
+        if cached:
+            try:
+                result = _validate_extraction(cached, source="cache")
+                logger.info("Extraction served from cache")
+                return result
+            except ValueError as exc:
+                logger.warning("Cache entry invalid, ignoring: %s", exc)
     if not settings.OPENROUTER_API_KEY:
-        if settings.LLM_CACHE:
-            cached = _cache_lookup(_cache_key(cleaned, settings.OPENROUTER_MODEL))
-            if cached:
-                try:
-                    result = _validate_extraction(cached, source="local_cache")
-                    logger.info("Extraction served from local cache")
-                    return result
-                except ValueError as exc:
-                    logger.warning("Local cache entry invalid: %s", exc)
         logger.info("No OpenRouter key configured; using deterministic local extraction")
         return _local_extraction(cleaned)
 
@@ -216,4 +234,8 @@ async def extract_issue_details(raw_text: str) -> dict:
         parsed = json.loads(text)
     except ValueError as exc:
         raise ValueError("OpenRouter response was not valid JSON") from exc
-    return _validate_extraction(parsed, source="openrouter")
+    result = _validate_extraction(parsed, source="openrouter")
+    if settings.LLM_CACHE:
+        # Store the raw validated payload (source is re-stamped on read).
+        await _cache_store(cache_key, {k: v for k, v in result.items() if k != "source"})
+    return result

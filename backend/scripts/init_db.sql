@@ -25,6 +25,10 @@ CREATE TABLE submissions (
     batch_id VARCHAR(100),
     tracking_token VARCHAR(64) UNIQUE,
     status VARCHAR(50) DEFAULT 'INGESTED', -- INGESTED, TRIAGING, OFFICER_REVIEW, ROUTED, REJECTED, MERGED, COMPLETED
+    reporter_name VARCHAR(255), -- optional self-declared reporter name (visible on workspace views)
+    contact_email VARCHAR(255), -- opt-in notification email (plaintext: required for delivery)
+    contact_phone VARCHAR(32), -- opt-in notification phone (plaintext: required for delivery)
+    notify_consent BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -162,11 +166,69 @@ CREATE INDEX idx_problems_status ON problems(status);
 CREATE INDEX idx_submissions_district ON submissions(geo_district);
 CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 
+-- Phase-1 identity tables (nitivayu.md §6). Idempotent: safe to apply over
+-- an existing database (all statements are IF NOT EXISTS / conditional).
+CREATE TABLE IF NOT EXISTS users (
+    user_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    phone_encrypted BYTEA,
+    email_encrypted BYTEA,
+    password_hash VARCHAR(255),
+    display_name VARCHAR(255), -- self-declared name (navbar, intake prefill; never auth)
+    workspace_type VARCHAR(50) NOT NULL DEFAULT 'citizen',
+    organization_id UUID,
+    district VARCHAR(100),
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+    otp_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    code_hash VARCHAR(255) NOT NULL,
+    channel VARCHAR(20) NOT NULL DEFAULT 'sms',
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    consumed_at TIMESTAMP WITH TIME ZONE,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS media_assets (
+    asset_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    submission_id UUID NOT NULL REFERENCES submissions(submission_id) ON DELETE CASCADE,
+    kind VARCHAR(20) NOT NULL,
+    storage_url VARCHAR(1024) NOT NULL,
+    thumbnail_url VARCHAR(1024),
+    transcript TEXT,
+    moderation_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    size_bytes INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS org_invites (
+    invite_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID,
+    organization_type VARCHAR(50) NOT NULL,
+    organization_name VARCHAR(255),
+    email VARCHAR(255) NOT NULL,
+    token_hash VARCHAR(255) NOT NULL UNIQUE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    invited_by VARCHAR(255),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_organization ON users(organization_id);
+CREATE INDEX IF NOT EXISTS idx_otp_codes_user ON otp_codes(user_id);
+CREATE INDEX IF NOT EXISTS idx_media_assets_submission ON media_assets(submission_id);
+CREATE INDEX IF NOT EXISTS idx_org_invites_email ON org_invites(email);
+CREATE INDEX IF NOT EXISTS idx_org_invites_status ON org_invites(status);
+
 -- Minimum university network needed for routing in a fresh local deployment.
 INSERT INTO universities (name, short_code, district, geo_lat, geo_lng, domain_specializations, active_capacity, nodal_contact_email)
 VALUES
-  ('Birla Institute of Technology, Mesra', 'BIT_MESRA', 'Ranchi', 23.4123, 85.4399, ARRAY['Infrastructure', 'Water', 'Environment'], 15, 'iic@bitmesra.ac.in'),
-  ('National Institute of Technology, Jamshedpur', 'NIT_JSR', 'East Singhbhum', 22.7766, 86.1444, ARRAY['Infrastructure', 'Industry', 'IoT'], 12, 'iic@nitjsr.ac.in')
+  ('Birla Institute of Technology (BIT), Mesra', 'BIT_MESRA', 'Ranchi', 23.4123, 85.4399, ARRAY['Infrastructure', 'Water', 'Environment'], 15, 'iic.head@bitmesra.ac.in'),
+  ('National Institute of Technology (NIT), Jamshedpur', 'NIT_JSR', 'East Singhbhum', 22.7766, 86.1444, ARRAY['Infrastructure', 'Industry', 'IoT'], 12, 'iic.coord@nitjsr.ac.in')
 ON CONFLICT (short_code) DO NOTHING;
 
 -- Demo industry workspace used by the CSR portal's scoped login and pledges.
@@ -174,3 +236,82 @@ INSERT INTO industries (name, sector, csr_focus_areas, csr_budget_inr, contact_p
 VALUES
   ('Nitivayu CSR Foundation', 'Civic Innovation', ARRAY['Infrastructure', 'Water', 'Environment'], 10000000, 'CSR Desk', 'csr@nitivayu.example')
 ON CONFLICT DO NOTHING;
+
+-- Casefile + P4 updates (idempotent).
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS geo_source VARCHAR(20) NOT NULL DEFAULT 'district';
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS language_pref VARCHAR(10);
+UPDATE submissions SET geo_source = 'gps' WHERE geo_source = 'district' AND geo_lat IS NOT NULL AND geo_lng IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS project_updates (
+    update_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    team_id UUID NOT NULL REFERENCES project_teams(team_id) ON DELETE CASCADE,
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    author_user_id VARCHAR(255),
+    author_name VARCHAR(255),
+    note TEXT NOT NULL,
+    milestone VARCHAR(50),
+    photo_urls JSONB,
+    notified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_project_updates_team ON project_updates(team_id);
+CREATE INDEX IF NOT EXISTS idx_project_updates_problem ON project_updates(problem_id);
+
+-- Batch-triage cadence + run history (§5.x batch control).
+CREATE TABLE IF NOT EXISTS cadence_configs (
+    id VARCHAR(100) PRIMARY KEY,
+    active_cadence VARCHAR(50) NOT NULL DEFAULT 'weekly',
+    cron_expression VARCHAR(100) NOT NULL DEFAULT '0 0 * * 0',
+    monthly_macro_cron VARCHAR(100) NOT NULL DEFAULT '0 0 1 * *',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS batch_runs (
+    batch_id VARCHAR(100) PRIMARY KEY,
+    cadence VARCHAR(50) NOT NULL DEFAULT 'weekly',
+    status VARCHAR(50) NOT NULL DEFAULT 'RUNNING',
+    total INTEGER NOT NULL DEFAULT 0,
+    processed INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    duplicates INTEGER NOT NULL DEFAULT 0,
+    csv_path VARCHAR(512),
+    pdf_path VARCHAR(512),
+    error TEXT,
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_batch_runs_started ON batch_runs(started_at DESC);
+
+-- plan4 backend pipeline (idempotent): account-scoped submissions, citizen
+-- profile prefs + opt-in SMS channel, monthly-macro tables.
+-- Mirrors scripts/migrations/002, 003, 004 for fresh deployments.
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(user_id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS ix_submissions_user_id ON submissions(user_id);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS language_pref VARCHAR(10);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_sms BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_enc BYTEA;
+
+CREATE TABLE IF NOT EXISTS theme_centroids (
+    category VARCHAR(100) PRIMARY KEY,
+    embedding VECTOR(384) NOT NULL,
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS seasonal_weights (
+    month INTEGER PRIMARY KEY CHECK (month BETWEEN 1 AND 12),
+    theme_weights JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Civic feed likes (mirrors scripts/migrations/005_civic_feed.sql).
+CREATE TABLE IF NOT EXISTS report_likes (
+    like_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    problem_id UUID NOT NULL REFERENCES problems(problem_id) ON DELETE CASCADE,
+    voter_key VARCHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_report_likes_voter UNIQUE (problem_id, voter_key)
+);
+CREATE INDEX IF NOT EXISTS ix_report_likes_problem ON report_likes(problem_id);

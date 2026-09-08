@@ -1,0 +1,5 @@
+# Host install/build outputs are rebuilt inside the image; don't ship them.
+node_modules/
+dist/
+.git/
+*.log
