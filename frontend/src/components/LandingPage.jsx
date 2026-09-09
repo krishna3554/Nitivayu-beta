@@ -1,17 +1,10 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Building2, GraduationCap, Landmark, ShieldCheck, HeartHandshake, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { MomentGlow, BackgroundGrid } from './ui';
 import { useInViewOnce, useParallaxLayer } from '../lib/motion';
-
-const UNIVERSITIES = ['BIT Mesra', 'NIT Jamshedpur', 'IIT-ISM Dhanbad', 'Central University of Jharkhand', 'Ranchi University', 'XLRI Jamshedpur'];
-
-const EXAMPLES = [
-  { id: 'Garhwa fluoride', meta: 'Water · Severity 5/5', match: 'BIT Mesra · 0.912', note: '4 village handpumps grouped into one macro-challenge.' },
-  { id: 'Subarnarekha effluent', meta: 'Environment · Severity 5/5', match: 'NIT Jamshedpur · 0.894', note: 'Industrial discharge routed to effluent-treatment expertise.' },
-  { id: 'Jharia coal dust', meta: 'Health · Severity 4/5', match: 'IIT-ISM Dhanbad · 0.878', note: 'Hindi report triaged without translation loss.' },
-  { id: 'Khunti Dokra artisans', meta: 'Livelihood · Severity 3/5', match: 'XLRI Jamshedpur · 0.865', note: 'Supply-chain challenge matched to management research.' },
-];
+import { getFeaturedCases, getPartners, getPublicStats } from '../services/api';
+import { useMetaConfig } from '../lib/meta';
 
 const PIPELINE = ['Ingested', 'AI triaging', 'Officer review', 'Routed to university', 'Milestone R&D', 'Resolved'];
 
@@ -31,6 +24,24 @@ export default function LandingPage() {
   const examplesGridRef = useParallaxLayer(examplesRef, 0.12);
   const pipeRef = useRef(null);
   const pipeSeen = useInViewOnce(pipeRef, 0.4);
+  const { config } = useMetaConfig();
+
+  // Live pipeline data: real stats, partners, and resolved cases.
+  // Empty states hide the rail rather than fabricate case studies.
+  const [live, setLive] = useState({ stats: null, partners: [], cases: [] });
+  useEffect(() => {
+    let on = true;
+    Promise.allSettled([getPublicStats(), getPartners(), getFeaturedCases()]).then(([s, p, c]) => {
+      if (!on) return;
+      setLive({
+        stats: s.status === 'fulfilled' ? s.value.data : null,
+        partners: p.status === 'fulfilled' ? [...(p.value.data?.universities || []).map((u) => u.name), ...(p.value.data?.industries || []).map((i) => i.name)] : [],
+        cases: c.status === 'fulfilled' ? (c.value.data?.cases || []) : [],
+      });
+    });
+    return () => { on = false; };
+  }, []);
+  const universityStrip = live.partners.length ? live.partners : null;
   return (
     <div className="bg-white">
       {/* Hero — two-column: copy left, pipeline visual right */}
@@ -61,7 +72,7 @@ export default function LandingPage() {
             <span aria-hidden className="absolute -bottom-3 -left-3 h-6 w-6 border-b-2 border-l-2 border-primary" />
             <span aria-hidden className="absolute -bottom-3 -right-3 h-6 w-6 border-b-2 border-r-2 border-primary" />
             <div className="card p-6">
-              <p className="type-caption text-primary">Live pipeline</p>
+              <p className="type-caption text-primary">Live pipeline{live.stats ? ` · ${live.stats.total_submissions} reports in` : ''}</p>
               <ol ref={pipeRef} className="mt-4 space-y-3">
                 {PIPELINE.map((step, i) => (
                   <li
@@ -73,12 +84,14 @@ export default function LandingPage() {
                       {i < 3 ? <Check className="h-3.5 w-3.5" /> : i + 1}
                     </span>
                     <span className={`text-sm ${i === 3 ? 'font-medium-plus text-ink' : 'text-ink-secondary'}`}>{step}</span>
-                    {i === 3 && <span className="tag-chip ml-auto !text-xs">BIT Mesra · 0.912</span>}
+                    {i === 3 && live.cases[0]?.university_name && (
+                      <span className="tag-chip ml-auto !text-xs">{live.cases[0].university_name}{live.cases[0].match_score != null ? ` · ${Number(live.cases[0].match_score).toFixed(3)}` : ''}</span>
+                    )}
                   </li>
                 ))}
               </ol>
               <div className="mt-5 grid grid-cols-3 gap-px overflow-hidden rounded-md border border-border bg-border">
-                {[['72h', 'officer SLA'], ['7d', 'university SLA'], ['M1–M3', 'milestones']].map(([v, l]) => (
+                {[[`${config.officer_sla_hours}h`, 'officer SLA'], [`${Math.round(config.university_sla_hours / 24)}d`, 'university SLA'], ['M1–M3', 'milestones']].map(([v, l]) => (
                   <div key={l} className="bg-white px-3 py-3 text-center">
                     <p className="text-lg font-medium-plus text-ink">{v}</p>
                     <p className="text-xs text-zinc-500">{l}</p>
@@ -90,15 +103,18 @@ export default function LandingPage() {
           </MomentGlow>
         </div>
 
-        {/* Horizontally scrollable university strip */}
+        {/* Horizontally scrollable university strip — real network, hidden until loaded */}
+        {universityStrip && (
         <div className="relative z-10 border-t border-border">
           <div className="scrollbar-thin mx-auto flex max-w-content gap-2 overflow-x-auto px-4 py-4 md:px-6" aria-label="University network">
-            {UNIVERSITIES.map((u) => <span key={u} className="tag-chip shrink-0">{u}</span>)}
+            {universityStrip.map((u) => <span key={u} className="tag-chip shrink-0">{u}</span>)}
           </div>
         </div>
+        )}
       </section>
 
-      {/* Example challenges carousel — arrows + snap, no native scrollbar */}
+      {/* Resolved-case rail — real completed challenges only; hidden when none yet */}
+      {live.cases.length > 0 && (
       <section ref={examplesRef} className="relative mx-auto max-w-content overflow-x-clip px-4 py-14 md:px-6">
         <BackgroundGrid ref={examplesGridRef} />
         <div className="relative z-10 flex items-end justify-between gap-4">
@@ -116,16 +132,16 @@ export default function LandingPage() {
           </div>
         </div>
         <div ref={railRef} className="relative z-10 -mx-4 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden">
-          {EXAMPLES.map((c) => (
-            <article key={c.id} className="card w-72 shrink-0 snap-start p-5">
-              <p className="type-caption text-zinc-400">{c.meta}</p>
-              <h3 className="mt-2 text-base font-medium-plus text-ink">{c.id}</h3>
-              <p className="type-body-sm mt-2 text-zinc-500">{c.note}</p>
-              <p className="mt-4 font-mono text-xs text-primary">{c.match}</p>
+          {live.cases.map((c, i) => (
+            <article key={`${c.title}-${i}`} className="card w-72 shrink-0 snap-start p-5">
+              <p className="type-caption text-zinc-400">{c.category}{c.severity ? ` · Severity ${c.severity}/5` : ''}{c.district ? ` · ${c.district}` : ''}</p>
+              <h3 className="mt-2 text-base font-medium-plus text-ink">{c.title}</h3>
+              <p className="mt-4 font-mono text-xs text-primary">{c.university_name || c.status}{c.match_score != null ? ` · ${Number(c.match_score).toFixed(3)}` : ''}</p>
             </article>
           ))}
         </div>
       </section>
+      )}
 
       {/* Black testimonial band — three-column quote grid */}
       <section className="bg-ink text-white">
@@ -134,8 +150,8 @@ export default function LandingPage() {
           <h2 className="type-display-md mt-3 max-w-2xl">AI proposes. Humans decide. Records prove it.</h2>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             {[
-              ['“I approve a match when I can see why — the 4-factor breakdown shows its work.”', 'Nodal Officer', 'District verification gate · 72h SLA'],
-              ['“Our students finally get field problems worth a thesis — with funding attached.”', 'IIC Coordinator', 'University workspace · 7-day acceptance SLA'],
+              ['“I approve a match when I can see why — the 4-factor breakdown shows its work.”', 'Nodal Officer', `District verification gate · ${config.officer_sla_hours}h SLA`],
+              ['“Our students finally get field problems worth a thesis — with funding attached.”', 'IIC Coordinator', `University workspace · ${Math.round(config.university_sla_hours / 24)}-day acceptance SLA`],
               ['“We pledge where milestones are public. No black box, no vanity metrics.”', 'CSR Desk', 'Corporate workspace · milestone-linked funding'],
             ].map(([quote, name, role]) => (
               <figure key={name} className="rounded-md border border-white/15 p-6">

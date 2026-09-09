@@ -21,8 +21,10 @@ const CitizenTrack = React.lazy(() => import('./app/citizen/CitizenTrack'));
 const CitizenProfile = React.lazy(() => import('./app/citizen/CitizenProfile'));
 
 const OfficerLayout = React.lazy(() => import('./app/officer/OfficerLayout'));
+const OfficerReviewDetail = React.lazy(() => import('./app/officer/OfficerReviewDetail'));
 
 const UniversityLayout = React.lazy(() => import('./app/university/UniversityLayout'));
+const UniversityAssignmentDetail = React.lazy(() => import('./app/university/UniversityAssignmentDetail'));
 
 const CorporateLayout = React.lazy(() => import('./app/corporate/CorporateLayout'));
 
@@ -78,6 +80,7 @@ export default function App() {
               {/* Officer Console */}
               <Route path="/app/officer" element={<RequireWorkspace allow={['officer', 'admin']}><OfficerLayout /></RequireWorkspace>}>
                 <Route index element={<OfficerRoute page="queue" />} />
+                <Route path="review/:id" element={<OfficerReviewDetail />} />
                 <Route path="batch" element={<OfficerRoute page="batch" />} />
                 <Route path="escalations" element={<OfficerRoute page="escalations" />} />
               </Route>
@@ -85,6 +88,7 @@ export default function App() {
               {/* University Workspace */}
               <Route path="/app/university" element={<RequireWorkspace allow={['university', 'admin']}><UniversityLayout /></RequireWorkspace>}>
                 <Route index element={<UniversityRoute page="inbox" />} />
+                <Route path="inbox/:id" element={<UniversityAssignmentDetail />} />
                 <Route path="projects" element={<UniversityRoute page="projects" />} />
                 <Route path="profile" element={<UniversityRoute page="profile" />} />
               </Route>

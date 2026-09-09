@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { Activity, Database, FileText, IndianRupee, Server, AlertTriangle } from 'lucide-react';
-import { getDashboardStats } from '../services/api';
+import { getDashboardStats, getServiceHealth } from '../services/api';
+
+const SERVICE_ICONS = [Server, Database, Activity, Database, FileText, IndianRupee, Activity];
 
 const BAR_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#64748b'];
 
@@ -20,6 +22,7 @@ function toChartData(distribution) {
 
 export default function ScalabilityDashboard({ bare = false }) {
   const [stats, setStats] = useState(null);
+  const [services, setServices] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -27,6 +30,10 @@ export default function ScalabilityDashboard({ bare = false }) {
       .then(({ data }) => setStats(data))
       .catch((err) => setError(err.response?.data?.detail || 'Unable to load dashboard analytics.'))
       .finally(() => setLoading(false));
+    // Live dependency checks (admin-only endpoint; non-admin shells hide the panel).
+    getServiceHealth()
+      .then(({ data }) => setServices(data?.services || []))
+      .catch(() => setServices(null));
   }, []);
 
   const categoryData = toChartData(stats?.category_distribution).sort((a, b) => b.value - a.value);
@@ -163,22 +170,27 @@ export default function ScalabilityDashboard({ bare = false }) {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
           <h3 className="text-sm font-bold text-zinc-900 mb-6 uppercase tracking-wider">Pipeline Services</h3>
           <div className="space-y-4">
-            {[
-              { icon: Server, name: 'FastAPI Backend', sub: `${stats?.total_submissions ?? 0} submissions served` },
-              { icon: Database, name: 'PostgreSQL + pgvector', sub: `${stats?.triage_throughput ?? 0} problems triaged` },
-              { icon: Activity, name: 'Temporal Workflows', sub: `${stats?.active_workers ?? 0} universities in routing network` },
-            ].map(({ icon: Icon, name, sub }) => (
-              <div key={name} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-primary-subtle text-primary rounded-md"><Icon className="w-5 h-5" /></div>
-                  <div>
-                    <p className="text-sm font-bold text-zinc-900">{name}</p>
-                    <p className="text-xs text-zinc-500">{sub}</p>
+            {(services || [
+              { name: 'FastAPI Backend', status: 'unknown', detail: `${stats?.total_submissions ?? 0} submissions served` },
+              { name: 'PostgreSQL + pgvector', status: 'unknown', detail: `${stats?.triage_throughput ?? 0} problems triaged` },
+              { name: 'Temporal Workflows', status: 'unknown', detail: `${stats?.active_workers ?? 0} universities in routing network` },
+            ]).map(({ name, status, detail }, i) => {
+              const Icon = SERVICE_ICONS[i % SERVICE_ICONS.length];
+              const tone = status === 'up' ? 'bg-emerald-100 text-emerald-700' : status === 'degraded' ? 'bg-amber-100 text-amber-700' : status === 'down' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-zinc-500';
+              const label = status === 'up' ? 'Live' : status === 'degraded' ? 'Degraded' : status === 'down' ? 'Down' : 'Unknown';
+              return (
+                <div key={name} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary-subtle text-primary rounded-md"><Icon className="w-5 h-5" /></div>
+                    <div>
+                      <p className="text-sm font-bold text-zinc-900">{name}</p>
+                      {!!detail && <p className="text-xs text-zinc-500">{detail}</p>}
+                    </div>
                   </div>
+                  <span className={`px-2 py-1 text-xs font-bold rounded ${tone}`}>{label}</span>
                 </div>
-                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded">Live</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
