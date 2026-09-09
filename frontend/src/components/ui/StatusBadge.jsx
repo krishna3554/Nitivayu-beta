@@ -20,6 +20,7 @@ const STATUS_MAP = {
   // Accepted / progress
   ACCEPTED: { label: 'Accepted', tone: 'success' },
   TEAM_FORMED: { label: 'Team formed', tone: 'success' },
+  IN_PROGRESS: { label: 'In progress', tone: 'success' },
   SUBMITTED: { label: 'Submitted', tone: 'pending' },
   VERIFIED: { label: 'Verified', tone: 'success' },
   PLEDGED: { label: 'Pledged', tone: 'violet' },

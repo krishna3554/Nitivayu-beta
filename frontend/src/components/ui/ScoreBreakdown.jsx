@@ -2,19 +2,21 @@ import React from 'react';
 
 /**
  * ScoreBreakdown — 4-factor match explanation as small bars.
- * score = 0.4*theme + 0.3*semantic + 0.2*capacity + 0.1*geo (worker impl).
+ * Weights come from /meta/config (same Settings the worker scores with);
+ * the constants below are display fallbacks only.
  */
 const FACTORS = [
-  { key: 'theme', label: 'Theme', weight: '0.4' },
-  { key: 'semantic', label: 'Semantic', weight: '0.3' },
-  { key: 'capacity', label: 'Capacity', weight: '0.2' },
-  { key: 'geo', label: 'Proximity', weight: '0.1' },
+  { key: 'theme', label: 'Theme' },
+  { key: 'semantic', label: 'Semantic' },
+  { key: 'capacity', label: 'Capacity' },
+  { key: 'geo', label: 'Proximity' },
 ];
 
-export default function ScoreBreakdown({ breakdown = {}, total, compact = false }) {
+export default function ScoreBreakdown({ breakdown = {}, total, weights, compact = false }) {
   return (
     <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
-      {FACTORS.map(({ key, label, weight }) => {
+      {FACTORS.map(({ key, label }) => {
+        const weight = weights?.[key] ?? { theme: 0.4, semantic: 0.3, capacity: 0.2, geo: 0.1 }[key];
         const v = Number(breakdown[key]);
         const pct = Number.isFinite(v) ? Math.round(Math.min(1, Math.max(0, v)) * 100) : null;
         return (

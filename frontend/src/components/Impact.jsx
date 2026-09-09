@@ -2,11 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { MetricCard, SectionCorners, BackgroundGrid } from './ui';
-import { getDashboardStats } from '../services/api';
+import { getDashboardStats, getPartners } from '../services/api';
 
 export default function Impact() {
   const [stats, setStats] = useState(null);
+  const [partners, setPartners] = useState(null);
   useEffect(() => { getDashboardStats().then(({ data }) => setStats(data)).catch(() => {}); }, []);
+  useEffect(() => {
+    getPartners()
+      .then(({ data }) => setPartners([...(data?.universities || []).map((u) => u.name), ...(data?.industries || []).map((i) => i.name)]))
+      .catch(() => setPartners([]));
+  }, []);
 
   const cards = [
     { label: 'Reports filed', value: stats?.total_submissions ?? '—', trend: 'citizen issues ingested' },
@@ -34,9 +40,12 @@ export default function Impact() {
         <div className="card mt-6 p-6" id="partners">
           <h2 className="text-lg font-medium-plus">Who carries the work</h2>
           <div className="mt-4 flex flex-wrap gap-2">
-            {['BIT Mesra', 'NIT Jamshedpur', 'IIT-ISM Dhanbad', 'Central University of Jharkhand', 'Ranchi University', 'XLRI Jamshedpur', 'Tata Steel CSR', 'CCL', 'BCCL', 'Vedanta'].map((p) => (
+            {(partners || []).map((p) => (
               <span key={p} className="tag-chip">{p}</span>
             ))}
+            {partners && !partners.length && (
+              <span className="text-sm text-zinc-500">Partner network is being onboarded — check back soon.</span>
+            )}
           </div>
           <p className="type-body-sm mt-4 text-zinc-500" id="capacity">Capacity is load-balanced: no university is offered more than its active capacity allows, and reroutes respect current load.</p>
         </div>
