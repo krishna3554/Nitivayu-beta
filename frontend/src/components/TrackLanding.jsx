@@ -8,7 +8,7 @@ export default function TrackLanding() {
   const [token, setToken] = useState('');
   const navigate = useNavigate();
   return (
-    <div className="relative mx-auto max-w-content overflow-x-clip bg-grid px-4 py-14 md:px-6">
+    <div className="relative mx-auto min-h-[calc(100vh-73px)] max-w-content overflow-x-clip bg-grid px-4 py-14 md:px-6">
       <BackgroundGrid />
       <SectionCorners />
       <div className="relative z-10 mx-auto max-w-xl">

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, FileText, Cpu, ShieldCheck, GraduationCap, HeartHandshake, Timer } from 'lucide-react';
-import { SectionCorners } from './ui';
+import { SectionCorners, BackgroundGrid } from './ui';
 
 const STEPS = [
   { icon: FileText, title: '1. You report', copy: 'Describe the issue in Hindi, Hinglish, or English. Add photos, an audio note, and your location — or just your district. You get a tracking token in seconds.' },
@@ -17,9 +17,10 @@ export default function HowItWorks() {
   const [imgOk, setImgOk] = useState(true);
   return (
     <div className="bg-white">
-      <section className="relative border-b border-border">
+      <section className="relative overflow-x-clip border-b border-border bg-grid">
+        <BackgroundGrid />
         <SectionCorners />
-        <div className={`mx-auto max-w-content gap-12 px-4 py-14 md:px-6 ${imgOk ? 'grid items-center md:grid-cols-2' : ''}`}>
+        <div className={`relative z-10 mx-auto max-w-content gap-12 px-4 py-14 md:px-6 ${imgOk ? 'grid items-center md:grid-cols-2' : ''}`}>
           <div>
             <p className="badge">How it works</p>
             <h1 className="type-display-lg mt-5 max-w-3xl text-ink">Your grievance, engineered into a solvable challenge.</h1>
@@ -30,7 +31,7 @@ export default function HowItWorks() {
             </div>
           </div>
           {imgOk && (
-            <div className="relative mx-auto w-full max-w-md">
+            <div className="relative z-10 mx-auto w-full max-w-md">
               <img
                 src="/how-it-works-city.png"
                 alt="A resident engaging with a smart city through the Nitivayu platform"

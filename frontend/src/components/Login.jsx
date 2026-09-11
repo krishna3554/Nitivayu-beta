@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock, Mail, ArrowRight, Smartphone } from 'lucide-react';
 import { useAuth } from '../lib/auth';
-import OAuthButtons, { consumeOAuthCallback } from './OAuthButtons';
-import api from '../services/api';
+import OAuthButtons, { consumeOAuthCallback, exchangeOAuthCode } from './OAuthButtons';
+import api, { getDemoAccounts } from '../services/api';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -21,16 +21,56 @@ export default function Login() {
 
   const next = params.get('next') || '';
 
+  // Demo credentials (seeded workspaces) come from the backend and only
+  // exist when DEMO_MODE is on — production builds hide this panel entirely.
+  const [demoAccounts, setDemoAccounts] = useState(null);
+  useEffect(() => {
+    let live = true;
+    getDemoAccounts().then(({ data }) => { if (live) setDemoAccounts(data?.accounts || []); }).catch(() => { if (live) setDemoAccounts([]); });
+    return () => { live = false; };
+  }, []);
+  const fillDemo = (acc) => {
+    setMode('institution');
+    setEmail(acc.email);
+    setPassword(acc.password);
+    setError('');
+  };
+
   const goWorkspace = (session) => {
     const map = { citizen: '/app/citizen', officer: '/app/officer', university: '/app/university', corporate: '/app/corporate', admin: '/app/admin' };
     navigate(next || map[session.workspace] || '/app/citizen');
   };
 
-  // Backend OAuth callback (?token=&role=&org=) lands here.
+  // Backend OAuth callback (?code= one-time, ?token= legacy) lands here.
   useEffect(() => {
+    let cancelled = false;
     const result = consumeOAuthCallback(params);
-    if (result?.error) setError(result.error);
-    else if (result?.session) goWorkspace(loginWithSession(result.session));
+    if (result?.error) {
+      setError(result.error);
+      return undefined;
+    }
+    if (result?.session) {
+      goWorkspace(loginWithSession(result.session));
+      return undefined;
+    }
+    if (result?.code) {
+      setLoading(true);
+      exchangeOAuthCode(result.code)
+        .then(({ session }) => {
+          if (cancelled) return;
+          // Strip the single-use code from the address bar (B2.7).
+          const clean = new URLSearchParams(params);
+          clean.delete('code');
+          navigate({ pathname: '/login', search: clean.toString() ? `?${clean}` : '' }, { replace: true });
+          goWorkspace(loginWithSession(session));
+        })
+        .catch(() => {
+          if (!cancelled) setError('That Google sign-in link expired or was already used. Try again.');
+        })
+        .finally(() => { if (!cancelled) setLoading(false); });
+      return () => { cancelled = true; };
+    }
+    return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -55,11 +95,7 @@ export default function Login() {
         ? `Demo code for ${phone}: ${data.dev_code} (dev mode — expires in 10 minutes).`
         : `We sent a 6-digit code to ${phone}. It expires in 10 minutes.`);
     } catch (err) {
-      if (err.response?.status === 404) {
-        setError('Phone OTP sign-in is being connected (Phase 1). For this demo, use email sign-in or continue as a guest with your tracking token.');
-      } else {
-        setError(err.response?.data?.detail || 'Could not send the code. Try again in a minute.');
-      }
+      setError(err.response?.data?.detail || 'Could not send the code. Try again in a minute.');
     } finally { setLoading(false); }
   };
 
@@ -68,7 +104,7 @@ export default function Login() {
     setLoading(true); setError('');
     try {
       const { data } = await api.post('/auth/verify-otp', { phone, code: otp });
-      const session = loginWithSession({ token: data.access_token, role: 'citizen', organizationId: null, orgName: '' });
+      const session = loginWithSession({ token: data.access_token, role: 'citizen', displayName: data.display_name || '', organizationId: null, orgName: '' });
       goWorkspace(session);
     } catch (err) {
       setError(err.response?.data?.detail || 'That code did not match. Check the SMS and try again.');
@@ -191,14 +227,27 @@ export default function Login() {
           </form>
         )}
 
+        {demoAccounts !== null && demoAccounts.length > 0 && (
         <div className="mt-6 border-t border-border pt-4">
-          <p className="type-caption text-zinc-400">Demo accounts</p>
-          <ul className="type-body-sm mt-2 space-y-1 font-mono text-zinc-500">
-            <li>officer@nitivayu.gov.in</li>
-            <li>iic.head@bitmesra.ac.in</li>
-            <li>csr@tatasteel.com</li>
+          <p className="type-caption text-zinc-400">Demo accounts — tap to fill</p>
+          <ul className="mt-2 space-y-1.5">
+            {demoAccounts.map((acc) => (
+              <li key={acc.email}>
+                <button
+                  type="button"
+                  onClick={() => fillDemo(acc)}
+                  title={`Fill ${acc.email}`}
+                  className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-surface-muted px-3 py-1.5 text-left hover:border-primary hover:bg-primary-subtle"
+                >
+                  <span className="type-body-sm font-medium-plus text-ink">{acc.role}</span>
+                  <span className="truncate font-mono text-xs text-zinc-500">{acc.email} · {acc.note || acc.password}</span>
+                </button>
+              </li>
+            ))}
           </ul>
+          <p className="type-body-sm mt-2 text-zinc-500">Google sign-in works with any Gmail (lands in Citizen). Officer/university/CSR via Google need their Gmail linked — ask me to link one.</p>
         </div>
+        )}
         </div>
       </div>
     </div>

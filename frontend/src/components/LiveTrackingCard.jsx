@@ -12,8 +12,9 @@ const STAGE_OF = {
 const STAGES = ['Submitted', 'AI triaging', 'Officer review', 'Routed', 'Under work', 'Resolved'];
 
 /**
- * Public live tracker. Token-gated (no login). Polls today; upgrades to SSE
- * on the shared pub/sub backbone without changing this view (Phase 5).
+ * Public live tracker. Token-gated (no login). Subscribes to the shared SSE
+ * bus for instant status flips and falls back to 30s polling when the
+ * stream is unavailable.
  */
 export default function LiveTrackingCard() {
   const { token } = useParams();
@@ -21,19 +22,52 @@ export default function LiveTrackingCard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [liveFeed, setLiveFeed] = useState(false);
 
   useEffect(() => {
     let live = true;
+    let loadedOnce = false;
+    let streaming = false;
+    let poll = null;
+    let guard = null;
+    let source = null;
     const load = async () => {
       try {
         const res = await getComplaint(token);
         if (!live) return;
         setData(res.data); setError(''); setUpdatedAt(new Date());
-      } catch (err) { if (live) setError(err.response?.data?.detail || 'We could not find this tracking token. Check it and try again.'); }
+        loadedOnce = true;
+      } catch (err) { if (live && !loadedOnce) setError(err.response?.data?.detail || 'We could not find this tracking token. Check it and try again.'); }
     };
+    const startPolling = () => { if (live && !poll) poll = setInterval(load, 30000); };
     load();
-    const t = setInterval(load, 30000);
-    return () => { live = false; clearInterval(t); };
+    try {
+      source = new EventSource(`/api/v1/events/stream?track=${encodeURIComponent(token)}`);
+      source.onmessage = () => {
+        if (!live) return;
+        streaming = true;
+        setLiveFeed(true);
+        if (guard) { clearTimeout(guard); guard = null; }
+        load();
+      };
+      source.onerror = () => {
+        // Stream unavailable — polling keeps the view fresh.
+        try { source?.close(); } catch {}
+        source = null;
+        if (guard) { clearTimeout(guard); guard = null; }
+        startPolling();
+      };
+      // Safety net: if the stream stays silent, poll anyway.
+      guard = setTimeout(() => { guard = null; if (!streaming) startPolling(); }, 35000);
+    } catch {
+      startPolling();
+    }
+    return () => {
+      live = false;
+      try { source?.close(); } catch {}
+      if (poll) clearInterval(poll);
+      if (guard) clearTimeout(guard);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -45,7 +79,7 @@ export default function LiveTrackingCard() {
   }));
 
   return (
-    <div className="relative mx-auto max-w-3xl overflow-x-clip bg-grid px-4 py-10 md:px-6">
+    <div className="relative mx-auto min-h-[calc(100vh-73px)] max-w-3xl overflow-x-clip bg-grid px-4 py-10 md:px-6">
       <BackgroundGrid />
       <div className="relative z-10">
       <p className="type-caption text-primary">Live tracker</p>
@@ -53,7 +87,7 @@ export default function LiveTrackingCard() {
         <h1 className="font-mono text-2xl font-bold tracking-tight">{token}</h1>
         <p className="flex items-center gap-1.5 text-xs text-zinc-500">
           <RefreshCw className="h-3 w-3" />
-          {updatedAt ? `Updated ${updatedAt.toLocaleTimeString()}` : 'Loading…'} · auto-refreshes
+          {updatedAt ? `Updated ${updatedAt.toLocaleTimeString()}` : 'Loading…'} · {liveFeed ? 'live' : 'auto-refreshes'}
         </p>
       </div>
 
@@ -109,10 +143,20 @@ export default function LiveTrackingCard() {
               <h2 className="type-label-sm text-zinc-500">Latest activity</h2>
               <ul className="mt-3 space-y-3">
                 {data.activity.slice(0, 10).map((a, i) => (
-                  <li key={a.log_id || i} className="flex gap-3 text-sm">
-                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                  <li key={a.log_id || `${a.action}-${i}`} className="flex gap-3 text-sm">
+                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${a.action === 'PROJECT_UPDATE' ? 'bg-emerald-500' : 'bg-primary'}`} aria-hidden />
                     <span>
-                      <span className="font-medium-plus">{String(a.action || '').replace(/_/g, ' ')}</span>
+                      {a.action === 'PROJECT_UPDATE' ? (
+                        <>
+                          <span className="font-medium-plus">
+                            {a.author_name ? `${a.author_name} posted a progress update` : 'The university posted a progress update'}
+                            {a.milestone && a.milestone !== 'general' ? ` (${a.milestone})` : ''}
+                          </span>
+                          <span className="mt-0.5 block text-ink-secondary">{a.note}</span>
+                        </>
+                      ) : (
+                        <span className="font-medium-plus">{String(a.action || '').replace(/_/g, ' ')}</span>
+                      )}
                       <span className="ml-2 text-xs text-zinc-400">{a.timestamp ? new Date(a.timestamp).toLocaleString() : ''}</span>
                     </span>
                   </li>

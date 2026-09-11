@@ -27,7 +27,7 @@ from app.db.models import (
     AuditLog, Citizen, FundingLink, Industry, Milestone, Officer,
     Problem, ProjectTeam, RouteAssignment, Submission, University,
 )
-from app.db.session import AsyncSessionLocal
+from app.db.session import get_session_factory
 
 DEMO_TOKEN_PREFIX = "NITIVAYU-2026-JH-DEMO"
 EMBEDDING_SEED = 26043  # deterministic vectors so reseeding is reproducible
@@ -224,7 +224,7 @@ async def seed(session) -> None:
 
 
 async def main() -> None:
-    async with AsyncSessionLocal() as session:
+    async with get_session_factory()() as session:
         await seed(session)
     print("\nSeed completed. Demo sign-ins (any password):")
     print("  Officer/Admin : officer@nitivayu.gov.in  |  admin@nitivayu.in")

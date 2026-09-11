@@ -25,6 +25,10 @@ CREATE TABLE submissions (
     batch_id VARCHAR(100),
     tracking_token VARCHAR(64) UNIQUE,
     status VARCHAR(50) DEFAULT 'INGESTED', -- INGESTED, TRIAGING, OFFICER_REVIEW, ROUTED, REJECTED, MERGED, COMPLETED
+    reporter_name VARCHAR(255), -- optional self-declared reporter name (visible on workspace views)
+    contact_email VARCHAR(255), -- opt-in notification email (plaintext: required for delivery)
+    contact_phone VARCHAR(32), -- opt-in notification phone (plaintext: required for delivery)
+    notify_consent BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -169,6 +173,7 @@ CREATE TABLE IF NOT EXISTS users (
     phone_encrypted BYTEA,
     email_encrypted BYTEA,
     password_hash VARCHAR(255),
+    display_name VARCHAR(255), -- self-declared name (navbar, intake prefill; never auth)
     workspace_type VARCHAR(50) NOT NULL DEFAULT 'citizen',
     organization_id UUID,
     district VARCHAR(100),
@@ -231,3 +236,82 @@ INSERT INTO industries (name, sector, csr_focus_areas, csr_budget_inr, contact_p
 VALUES
   ('Nitivayu CSR Foundation', 'Civic Innovation', ARRAY['Infrastructure', 'Water', 'Environment'], 10000000, 'CSR Desk', 'csr@nitivayu.example')
 ON CONFLICT DO NOTHING;
+
+-- Casefile + P4 updates (idempotent).
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS geo_source VARCHAR(20) NOT NULL DEFAULT 'district';
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS language_pref VARCHAR(10);
+UPDATE submissions SET geo_source = 'gps' WHERE geo_source = 'district' AND geo_lat IS NOT NULL AND geo_lng IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS project_updates (
+    update_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    team_id UUID NOT NULL REFERENCES project_teams(team_id) ON DELETE CASCADE,
+    problem_id UUID REFERENCES problems(problem_id) ON DELETE CASCADE,
+    author_user_id VARCHAR(255),
+    author_name VARCHAR(255),
+    note TEXT NOT NULL,
+    milestone VARCHAR(50),
+    photo_urls JSONB,
+    notified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_project_updates_team ON project_updates(team_id);
+CREATE INDEX IF NOT EXISTS idx_project_updates_problem ON project_updates(problem_id);
+
+-- Batch-triage cadence + run history (§5.x batch control).
+CREATE TABLE IF NOT EXISTS cadence_configs (
+    id VARCHAR(100) PRIMARY KEY,
+    active_cadence VARCHAR(50) NOT NULL DEFAULT 'weekly',
+    cron_expression VARCHAR(100) NOT NULL DEFAULT '0 0 * * 0',
+    monthly_macro_cron VARCHAR(100) NOT NULL DEFAULT '0 0 1 * *',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS batch_runs (
+    batch_id VARCHAR(100) PRIMARY KEY,
+    cadence VARCHAR(50) NOT NULL DEFAULT 'weekly',
+    status VARCHAR(50) NOT NULL DEFAULT 'RUNNING',
+    total INTEGER NOT NULL DEFAULT 0,
+    processed INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    duplicates INTEGER NOT NULL DEFAULT 0,
+    csv_path VARCHAR(512),
+    pdf_path VARCHAR(512),
+    error TEXT,
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_batch_runs_started ON batch_runs(started_at DESC);
+
+-- plan4 backend pipeline (idempotent): account-scoped submissions, citizen
+-- profile prefs + opt-in SMS channel, monthly-macro tables.
+-- Mirrors scripts/migrations/002, 003, 004 for fresh deployments.
+ALTER TABLE submissions
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(user_id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS ix_submissions_user_id ON submissions(user_id);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS language_pref VARCHAR(10);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_sms BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_enc BYTEA;
+
+CREATE TABLE IF NOT EXISTS theme_centroids (
+    category VARCHAR(100) PRIMARY KEY,
+    embedding VECTOR(384) NOT NULL,
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS seasonal_weights (
+    month INTEGER PRIMARY KEY CHECK (month BETWEEN 1 AND 12),
+    theme_weights JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Civic feed likes (mirrors scripts/migrations/005_civic_feed.sql).
+CREATE TABLE IF NOT EXISTS report_likes (
+    like_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    problem_id UUID NOT NULL REFERENCES problems(problem_id) ON DELETE CASCADE,
+    voter_key VARCHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_report_likes_voter UNIQUE (problem_id, voter_key)
+);
+CREATE INDEX IF NOT EXISTS ix_report_likes_problem ON report_likes(problem_id);

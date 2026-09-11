@@ -1,5 +1,5 @@
 from typing import AsyncGenerator
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from jose import JWTError, jwt
@@ -10,8 +10,18 @@ from app.db.session import get_db
 from temporalio.client import Client
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
-oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+def parse_uuid(value: str, label: str = "id"):
+    """Validate path/payload identifiers so malformed values return 422 instead of a 500."""
+    import uuid as uuid_lib
+
+    try:
+        return uuid_lib.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=422, detail=f"Invalid {label}: expected a UUID")
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -45,6 +55,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return {"user_id": user_id, "role": role, "organization_id": payload.get("organization_id")}
 
+
 async def get_current_user_optional(token: str | None = Depends(oauth2_scheme_optional)) -> dict | None:
     """Lenient variant for rate-limit keying and public endpoints: None when anonymous."""
     if not token:
@@ -54,20 +65,9 @@ async def get_current_user_optional(token: str | None = Depends(oauth2_scheme_op
     except HTTPException:
         return None
 
-def require_role(*roles):
-    async def role_checker(current_user: dict = Depends(get_current_user)):
-        if current_user.get("role") not in roles:
-            required = " or ".join(roles)
-            raise HTTPException(
-                status_code=403,
-                detail=f"This portal requires a {required} account; you are signed in as '{current_user.get('role')}'.",
-            )
-        return current_user
-    return role_checker
 
-
-# Backend role -> frontend workspace namespace (nitivayu.md §1.3). Admins may
-# preview any workspace; everyone else is confined to their own shell.
+# Backend role -> frontend workspace namespace (§1.3). Admins may preview any
+# workspace; everyone else is confined to their own shell.
 ROLE_WORKSPACE = {
     "citizen": "citizen",
     "officer": "officer",
@@ -112,10 +112,18 @@ def require_workspace(*workspaces: str, org_scoped: bool = True):
 
     return checker
 
-async def get_temporal_client(request: Request) -> Client:
-    """Reuse the lifespan-managed client; connect per request only as a fallback."""
-    client = getattr(request.app.state, "temporal_client", None)
-    if client is not None:
-        return client
+def require_role(*roles):
+    async def role_checker(current_user: dict = Depends(get_current_user)):
+        if current_user.get("role") not in roles:
+            required = " or ".join(roles)
+            raise HTTPException(
+                status_code=403,
+                detail=f"This portal requires a {required} account; you are signed in as '{current_user.get('role')}'.",
+            )
+        return current_user
+    return role_checker
+
+async def get_temporal_client() -> Client:
     settings = get_settings()
-    return await Client.connect(settings.TEMPORAL_HOST, namespace=settings.TEMPORAL_NAMESPACE)
+    client = await Client.connect(settings.TEMPORAL_HOST, namespace=settings.TEMPORAL_NAMESPACE)
+    return client

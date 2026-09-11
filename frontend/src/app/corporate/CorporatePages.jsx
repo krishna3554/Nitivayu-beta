@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Compass, Wallet, IndianRupee, MapPin, Building } from 'lucide-react';
 import { EmptyState, MomentGlow, MilestoneBurst, PageBack, SeverityBadge, StatusBadge } from '../../components/ui';
-import { createCsrPledge, getCSRChallenges, getCSRPledges } from '../../services/api';
+import { createCsrPledge, getCSRChallenges, getCSRPledges, getIndustryImpact, exportMonthlyMatrix } from '../../services/api';
 
 export function formatINR(amount) {
   const value = Number(amount) || 0;
@@ -16,15 +16,22 @@ function useCsrData() {
   const [summary, setSummary] = useState({ total_pledged_inr: 0, projects_funded: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
   const load = async () => {
     setLoading(true); setError('');
     try {
       const [c, p] = await Promise.all([getCSRChallenges(), getCSRPledges()]);
+      if (!mounted.current) return;
       setChallenges(Array.isArray(c.data) ? c.data : []);
       setPledges(p.data.pledges || []);
       setSummary({ total_pledged_inr: p.data.total_pledged_inr || 0, projects_funded: p.data.projects_funded || 0 });
-    } catch (err) { setError(err.response?.data?.detail || 'Unable to load CSR data. Sign in again if this persists.'); }
-    finally { setLoading(false); }
+    } catch (err) {
+      if (!mounted.current) return;
+      const timedOut = err?.code === 'ECONNABORTED';
+      setError(timedOut ? 'The request timed out. Check your connection and retry.' : (err.response?.data?.detail || 'Unable to load CSR data. Sign in again if this persists.'));
+    }
+    finally { if (mounted.current) setLoading(false); }
   };
   useEffect(() => { load(); }, []);
   return { challenges, pledges, summary, loading, error, reload: load };
@@ -56,7 +63,7 @@ export function CorporateOpportunitiesPage() {
       <div className="rounded-md bg-ink p-6 text-white md:p-8">
         <h1 className="type-display-md !text-3xl">Fund what you can verify.</h1>
         <p className="type-body-md mt-2 max-w-xl text-white/70">Only officer-routed, university-backed challenges appear here — every rupee links to milestones, not promises.</p>
-        <p className="mt-4 text-sm text-white/60">Committed so far: <strong className="text-white">{loading ? '…' : formatINR(summary.total_pledged_inr)}</strong> across <strong className="text-white">{loading ? '…' : summary.projects_funded}</strong> projects</p>
+        <p className="mt-4 text-sm text-white/60">Committed so far: <strong className="text-white">{loading ? <span className="inline-block h-4 w-20 animate-pulse rounded-sm bg-white/20 align-middle" aria-label="Loading totals" /> : formatINR(summary.total_pledged_inr)}</strong> across <strong className="text-white">{loading ? <span className="inline-block h-4 w-8 animate-pulse rounded-sm bg-white/20 align-middle" aria-label="Loading count" /> : summary.projects_funded}</strong> projects</p>
       </div>
 
       {notice && (notice.startsWith('Pledge of') ? (
@@ -87,11 +94,11 @@ export function CorporateOpportunitiesPage() {
             <article key={c.problem_id} className="card flex flex-col p-5">
               <div className="flex items-start justify-between gap-2">
                 <span className="tag-chip !text-xs">{c.category}</span>
-                <span className="flex items-center gap-1 text-xs text-zinc-500"><MapPin className="h-3 w-3" />{c.district || 'Jharkhand'}</span>
+                {c.district && <span className="flex items-center gap-1 text-xs text-zinc-500"><MapPin className="h-3 w-3" />{c.district}</span>}
               </div>
               <h3 className="mt-3 font-medium-plus leading-snug">{c.title}</h3>
               <p className="type-body-sm mt-1 line-clamp-2 text-zinc-500">{c.description}</p>
-              <p className="mt-2 flex items-center gap-1.5 text-sm text-zinc-500"><Building className="h-4 w-4 text-zinc-400" />{c.university || 'Pending assignment'}</p>
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-zinc-500"><Building className="h-4 w-4 text-zinc-400" />{c.university || <em>Awaiting university offer</em>}</p>
               <div className="mt-3 flex items-center gap-2">
                 <SeverityBadge value={c.severity} />
                 <StatusBadge status={c.status} />
@@ -160,7 +167,23 @@ export function CorporatePortfolioPage() {
 
 export function CorporateImpactPage() {
   const { pledges, summary } = useCsrData();
+  const [impact, setImpact] = useState(null);
+  const [matrix, setMatrix] = useState({ running: false, url: '', error: '' });
+  useEffect(() => { getIndustryImpact().then(({ data }) => setImpact(data)).catch(() => {}); }, []);
   const disbursed = pledges.filter((p) => ['DISBURSED', 'COMPLETED'].includes(String(p.status).toUpperCase())).length;
+
+  const downloadMatrix = async () => {
+    setMatrix({ running: true, url: '', error: '' });
+    try {
+      const { data } = await exportMonthlyMatrix();
+      setMatrix({ running: false, url: data?.download_url || '', error: data?.download_url ? '' : 'Export generated but no download link was returned.' });
+      if (data?.download_url) {
+        const absolute = data.download_url.startsWith('http') ? data.download_url : `${window.location.origin}${data.download_url}`;
+        window.open(absolute, '_blank', 'noopener');
+      }
+    } catch (err) { setMatrix({ running: false, url: '', error: err.response?.data?.detail || 'Export failed. Retry in a moment.' }); }
+  };
+
   return (
     <div className="mx-auto max-w-2xl">
       <PageBack to="/app/corporate" label="Back to opportunities" />
@@ -168,9 +191,15 @@ export function CorporateImpactPage() {
       <p className="type-body-md mt-2 text-zinc-500">Monthly funding matrices map your focus areas to validated challenges — exportable for board and audit use.</p>
       <div className="card mt-5 space-y-3 p-6">
         <ImpactRow k="Total committed" v={formatINR(summary.total_pledged_inr)} />
-        <ImpactRow k="Projects funded" v={String(summary.projects_funded)} />
+        <ImpactRow k="Projects funded" v={String(impact?.projects_funded ?? summary.projects_funded)} />
         <ImpactRow k="Disbursed / completed" v={String(disbursed)} />
-        <ImpactRow k="Monthly matrix" v="CSR matches XLSX — via Admin → Compliance exports" />
+        <ImpactRow k="Milestones verified" v={String(impact?.milestones_verified ?? '—')} />
+        <ImpactRow k="Districts reached" v={(impact?.districts_reached || []).join(', ') || '—'} />
+        <div className="flex items-center justify-between gap-6 pt-1">
+          <dt className="type-label-sm text-zinc-500">Monthly matrix (XLSX)</dt>
+          <dd><button type="button" onClick={downloadMatrix} disabled={matrix.running} className="btn-secondary !py-2 disabled:opacity-60">{matrix.running ? 'Generating…' : 'Download'}</button></dd>
+        </div>
+        {matrix.error && <p role="alert" className="text-sm text-rose-700">{matrix.error}</p>}
       </div>
     </div>
   );

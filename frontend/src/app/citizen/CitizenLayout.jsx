@@ -1,12 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { FilePlus2, FolderOpen, Radar, User } from 'lucide-react';
 import { AppShell } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { getMyReports } from '../../services/api';
 
 export default function CitizenLayout() {
   const { session } = useAuth();
-  const myCount = (() => { try { return (JSON.parse(localStorage.getItem('nitivayu_my_reports') || '[]') || []).length; } catch { return 0; } })();
+  const [accountCount, setAccountCount] = useState(null);
+  useEffect(() => {
+    let live = true;
+    if (!session?.token) { setAccountCount(null); return; }
+    getMyReports().then(({ data }) => { if (live) setAccountCount(data?.count ?? (data?.items || []).length); }).catch(() => {});
+    return () => { live = false; };
+  }, [session?.token]);
+  const localCount = (() => { try { return (JSON.parse(localStorage.getItem('nitivayu_my_reports') || '[]') || []).length; } catch { return 0; } })();
+  const myCount = accountCount ?? localCount;
   return (
     <AppShell
       workspace="citizen"

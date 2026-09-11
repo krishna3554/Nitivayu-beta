@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional, Any, List
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, LargeBinary, Text, CheckConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, LargeBinary, Text, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from pgvector.sqlalchemy import Vector
@@ -25,15 +25,32 @@ class Submission(Base):
 
     submission_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     citizen_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('citizens.citizen_id', ondelete='SET NULL'), nullable=True)
+    # Account-scoped ownership (WP-1): set when a signed-in citizen submits or
+    # later claims an anonymous report via its tracking token. Anonymous
+    # submissions stay NULL and remain trackable by token only.
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('users.user_id', ondelete='SET NULL'), nullable=True, index=True)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     photo_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     geo_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     geo_lng: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     geo_district: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     geo_block: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # How the coordinates arrived: gps (device auto-detect) | manual (typed
+    # or pin-corrected by the citizen) | district (no coordinates at all).
+    geo_source: Mapped[str] = mapped_column(String(20), nullable=False, default='district')
+    language_pref: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     batch_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     tracking_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(50), default='INGESTED')
+    # Optional self-declared reporter name (shown to officers/universities/CSR
+    # on workspace views; contact details stay hashed — name only, no PII).
+    reporter_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Optional opt-in contact for status notifications (mail/SMS). Plaintext
+    # by necessity (hashed contacts cannot be dialed); only set with explicit
+    # consent at intake. Production hardening: envelope-encrypt these columns.
+    contact_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    notify_consent: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     citizen: Mapped[Optional["Citizen"]] = relationship("Citizen", back_populates="submissions")
@@ -202,10 +219,21 @@ class User(Base):
     # plaintext value is never persisted (see services/auth.py).
     phone_encrypted: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
     email_encrypted: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    # Reversibly-encrypted phone for OPT-IN status SMS only (WP-9). Written at
+    # OTP-verify time and only when PHONE_FERNET_KEY is configured; the
+    # plaintext value is never logged. NULL = no SMS channel for this user.
+    phone_enc: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Self-declared display name (signup/invite/OAuth). Shown in the navbar
+    # and prefilled as reporter on intake; never used for auth decisions.
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     workspace_type: Mapped[str] = mapped_column(String(50), nullable=False, default='citizen')
     organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     district: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    language_pref: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # Opt-in SMS status updates (WP-9). Off by default; requires a reachable
+    # contact channel (see services/auth.py PII note).
+    notify_sms: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -258,3 +286,99 @@ class OrgInvite(Base):
     invited_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ProjectUpdate(Base):
+    """University progress update on an active project (P4).
+
+    Written by the university in plain, reassuring language. Surfaced to:
+    - the university's own project timeline,
+    - the citizen's /track/:token timeline (as activity entries),
+    - officers (audit-visible, same query path as the detail view).
+    Citizen SMS/push is a logged notification intent: citizen phone numbers
+    are stored one-way hashed by design, so no contact channel exists until
+    an explicit opt-in contact field is added (documented, not faked).
+    """
+    __tablename__ = 'project_updates'
+
+    update_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('project_teams.team_id', ondelete='CASCADE'), nullable=False)
+    problem_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('problems.problem_id', ondelete='CASCADE'), nullable=True)
+    author_user_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    author_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    milestone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # M1 | M2 | M3 | general
+    photo_urls: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    notified: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class CadenceConfig(Base):
+    """Batch-triage cadence (one row, upserted by PUT /admin/triage/schedules)."""
+    __tablename__ = 'cadence_configs'
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    active_cadence: Mapped[str] = mapped_column(String(50), nullable=False, default='weekly')
+    cron_expression: Mapped[str] = mapped_column(String(100), nullable=False, default='0 0 * * 0')
+    monthly_macro_cron: Mapped[str] = mapped_column(String(100), nullable=False, default='0 0 1 * *')
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class ThemeCentroid(Base):
+    """WP-11: monthly mean embedding per category, recomputed by the macro
+    workflow. Routing blends the problem↔centroid similarity into the theme
+    factor so the matcher learns from officer-approved volume."""
+    __tablename__ = 'theme_centroids'
+
+    category: Mapped[str] = mapped_column(String(100), primary_key=True)
+    embedding: Mapped[Any] = mapped_column(Vector(384), nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class SeasonalWeight(Base):
+    """WP-11: per-calendar-month routing weight adjustments (e.g. flood
+    season boosts Water theme). Applied by the routing scorer on top of the
+    base weights; the macro workflow refreshes them monthly."""
+    __tablename__ = 'seasonal_weights'
+
+    month: Mapped[int] = mapped_column(Integer, CheckConstraint('month BETWEEN 1 AND 12'), primary_key=True)
+    theme_weights: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class BatchRun(Base):
+    """One on-demand or scheduled batch-triage execution (run history)."""
+    __tablename__ = 'batch_runs'
+
+    batch_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    cadence: Mapped[str] = mapped_column(String(50), nullable=False, default='weekly')
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default='RUNNING')
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    processed: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    duplicates: Mapped[int] = mapped_column(Integer, default=0)
+    csv_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    pdf_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReportLike(Base):
+    """One like on a public-feed report (civic feed).
+
+    Voters are either signed-in accounts (`u:<sha256(sub)[:32]>`) or anonymous
+    browser tokens (`a:<uuid hex>`) generated client-side and held in
+    localStorage. The unique (problem_id, voter_key) pair makes like/unlike
+    idempotent and double-voting impossible at the database level.
+    """
+    __tablename__ = 'report_likes'
+
+    like_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    problem_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('problems.problem_id', ondelete='CASCADE'), nullable=False, index=True)
+    voter_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (UniqueConstraint('problem_id', 'voter_key', name='uq_report_likes_voter'),)
+

@@ -1,5 +1,6 @@
 from datetime import timedelta
 from temporalio import workflow
+from temporalio.exceptions import TimeoutError as TemporalTimeoutError
 
 @workflow.defn
 class UniversitySLAWorkflow:
@@ -20,7 +21,7 @@ class UniversitySLAWorkflow:
                     lambda: self.university_decision is not None,
                     timeout=timedelta(days=5)
                 )
-            except workflow.TimeoutError:
+            except (TemporalTimeoutError, TimeoutError):
                 await workflow.execute_activity(
                     "send_sla_warning_activity",
                     {"assignment_id": assignment_id, "university": uni},
@@ -31,7 +32,7 @@ class UniversitySLAWorkflow:
                         lambda: self.university_decision is not None,
                         timeout=timedelta(days=2)
                     )
-                except workflow.TimeoutError:
+                except (TemporalTimeoutError, TimeoutError):
                     self.university_decision = "decline"
             
             if self.university_decision == "accept":

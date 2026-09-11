@@ -80,6 +80,22 @@ def _clear_overrides():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture()
+def _no_oauth(monkeypatch):
+    """Blank provider keys so OAuth reads as unconfigured.
+
+    Settings loads root .env (which now holds real keys on dev machines);
+    env vars take precedence, so blank them + drop the lru cache.
+    """
+    from app.config import get_settings
+
+    for key in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET"):
+        monkeypatch.setenv(key, "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 def future(**kwargs):
     return datetime.now(timezone.utc) + timedelta(**kwargs)
 
@@ -98,8 +114,10 @@ def test_register_creates_citizen_and_logs_in(_clear_overrides):
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["access_token"] and body["workspace_type"] == "citizen" and body["role"] == "citizen"
+    assert body["display_name"] == "Test Citizen"
     users = [o for o in session.added if isinstance(o, User)]
     assert len(users) == 1 and users[0].district == "Ranchi"
+    assert users[0].display_name == "Test Citizen"
 
 
 def test_register_rejects_duplicate(_clear_overrides):
@@ -206,30 +224,37 @@ def test_accept_invite_unknown_token_is_404(_clear_overrides):
     assert response.status_code == 404
 
 
-def test_invite_endpoints_require_admin(_clear_overrides):
+def test_invite_endpoints_require_admin(_clear_overrides, monkeypatch):
     from app.api.deps import create_access_token
+    from app.config import get_settings
 
-    citizen_token = create_access_token({"sub": "x", "role": "citizen"})
-    admin_token = create_access_token({"sub": "a", "role": "admin"})
-    headers = {"Authorization": f"Bearer {citizen_token}"}
-    session = ScriptedSession([])
-    client = make_client(session)
-    response = client.post(
-        "/api/v1/admin/invites",
-        json={"email": "x@univ.ac.in", "organization_type": "university"},
-        headers=headers,
-    )
-    assert response.status_code == 403
-    # Admin path reaches the service (empty org match -> invite created).
-    session2 = ScriptedSession([FakeResult([])])
-    client2 = make_client(session2)
-    response2 = client2.post(
-        "/api/v1/admin/invites",
-        json={"email": "x@univ.ac.in", "organization_type": "university", "organization_name": "Nope"},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
-    assert response2.status_code == 201, response2.text
-    assert response2.json()["token"]
+    # Exercise the no-SMTP branch (token returned once for copy-paste).
+    monkeypatch.setenv("SMTP_HOST", "")
+    get_settings.cache_clear()
+    try:
+        citizen_token = create_access_token({"sub": "x", "role": "citizen"})
+        admin_token = create_access_token({"sub": "a", "role": "admin"})
+        headers = {"Authorization": f"Bearer {citizen_token}"}
+        session = ScriptedSession([])
+        client = make_client(session)
+        response = client.post(
+            "/api/v1/admin/invites",
+            json={"email": "x@univ.ac.in", "organization_type": "university"},
+            headers=headers,
+        )
+        assert response.status_code == 403
+        # Admin path reaches the service (empty org match -> invite created).
+        session2 = ScriptedSession([FakeResult([])])
+        client2 = make_client(session2)
+        response2 = client2.post(
+            "/api/v1/admin/invites",
+            json={"email": "x@univ.ac.in", "organization_type": "university", "organization_name": "Nope"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response2.status_code == 201, response2.text
+        assert response2.json()["token"]
+    finally:
+        get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------------
@@ -237,12 +262,24 @@ def test_invite_endpoints_require_admin(_clear_overrides):
 # ---------------------------------------------------------------------------
 
 def test_login_response_carries_workspace_contract(_clear_overrides):
-    session = ScriptedSession([FakeResult([]), FakeResult([]), FakeResult([])])
+    # B2.11/B2.12 fail-closed: unknown emails are 401, never auto-citizen.
+    session = ScriptedSession([FakeResult([]), FakeResult([]), FakeResult([]), FakeResult([])])
     client = make_client(session)
     response = client.post("/api/v1/auth/login", json={"email": "ramesh@example.com", "password": "x"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["workspace_type"] == "citizen" and body["organization_id"] is None
+    assert response.status_code == 401
+
+
+def test_login_demo_contact_match_still_routes(_clear_overrides):
+    # Seeded university contact emails keep demo access (exact match only).
+    class FakeUni:
+        university_id = "11111111-2222-4333-8444-555555555555"
+        name = "BIT Mesra"
+
+    session = ScriptedSession([FakeResult([]), FakeResult([]), FakeResult([FakeUni()])])
+    client = make_client(session)
+    response = client.post("/api/v1/auth/login", json={"email": "iic.head@bitmesra.ac.in", "password": "anything-here"})
+    assert response.status_code == 200, response.text
+    assert response.json()["role"] == "university"
 
 
 def test_login_enforces_officer_password(_clear_overrides):
@@ -270,7 +307,7 @@ def test_login_enforces_officer_password(_clear_overrides):
     assert response.status_code == 401
 
 
-def test_oauth_url_unconfigured_is_501(_clear_overrides):
+def test_oauth_url_unconfigured_is_501(_clear_overrides, _no_oauth):
     session = ScriptedSession([])
     client = make_client(session)
     for provider in ("google", "facebook"):
@@ -302,7 +339,7 @@ def test_submission_persists_geo_audio_and_media_rows(_clear_overrides, monkeypa
     client = make_client(session)
     response = client.post(
         "/api/v1/submissions",
-        data={"raw_text": "Handpump water is yellow in Garhwa", "district": "Garhwa", "geo_lat": "24.1", "geo_lng": "83.8"},
+        data={"raw_text": "Handpump water is yellow in Garhwa", "district": "Garhwa", "geo_lat": "24.1", "geo_lng": "83.8", "reporter_name": "Test Reporter"},
         files={"photo": ("p.webp", b"\x00" * 64, "image/webp"), "audio_note": ("a.webm", b"\x01" * 64, "audio/webm")},
     )
     assert response.status_code == 202, response.text
@@ -310,6 +347,7 @@ def test_submission_persists_geo_audio_and_media_rows(_clear_overrides, monkeypa
     assert {m.kind for m in media} == {"photo", "audio"}
     submissions = [o for o in session.added if type(o).__name__ == "Submission"]
     assert submissions and submissions[0].geo_lat == 24.1 and submissions[0].photo_url.startswith("local://")
+    assert submissions[0].reporter_name == "Test Reporter"
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +390,7 @@ def test_memory_rate_limiter_trips():
     assert not _allow_memory(key, 2, 60)
 
 
-def test_metrics_and_oauth_helpers():
+def test_metrics_and_oauth_helpers(_no_oauth):
     assert auth_svc.oauth_authorize_url("google", next_url="/x") is None
     assert auth_svc.normalize_phone("+91 98765-43210") == "9876543210"
     assert auth_svc.valid_phone("9876543210") and not auth_svc.valid_phone("123")

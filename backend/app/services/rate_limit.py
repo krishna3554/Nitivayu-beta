@@ -23,17 +23,28 @@ def _client_key(request: Request, user: dict | None) -> str:
     return f"{who}:{ip}"
 
 
-async def _allow_redis(key: str, limit: int, window: int) -> bool:
+async def _allow_redis(key: str, limit: int, window: int) -> bool | None:
+    """Return True/False when Redis answers, None when Redis is unavailable.
+
+    B4.3: callers must NOT double-count. Redis is the source of truth when
+    reachable; the in-memory fallback applies only when Redis is absent or
+    errors, so a single deployment never consumes two budgets per request.
+    """
     client = redis_mod.get_redis()
     if client is None:
-        return True  # fall through to memory counting below
+        return None
     try:
-        count = await client.incr(key)
-        if count == 1:
-            await client.expire(key, window)
+        # Atomic INCR+EXPIRE: if EXPIRE were a separate call and it failed
+        # after INCR succeeded, the key would live forever with no TTL and
+        # permanently lock out the caller. The pipeline keeps both together.
+        async with client.pipeline() as pipe:
+            pipe.incr(key)
+            pipe.expire(key, window)
+            results = await pipe.execute()
+        count = int(results[0])
         return count <= limit
     except Exception:
-        return True
+        return None
 
 
 def _allow_memory(key: str, limit: int, window: int) -> bool:
@@ -57,8 +68,8 @@ def rate_limit(limit: int | None = None, window_seconds: int = 60, *, setting: s
 
         resolved = limit if limit is not None else int(getattr(get_settings(), setting, 20))
         key = f"rl:{request.url.path}:{_client_key(request, user)}"
-        ok_redis = await _allow_redis(key, resolved, window_seconds)
-        ok = ok_redis and _allow_memory(f"mem:{key}", resolved, window_seconds)
+        verdict = await _allow_redis(key, resolved, window_seconds)
+        ok = verdict if verdict is not None else _allow_memory(f"mem:{key}", resolved, window_seconds)
         if not ok:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

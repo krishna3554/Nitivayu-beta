@@ -72,11 +72,9 @@ def test_health_endpoint_responds(client):
 
 
 def test_login_returns_citizen_token(client):
+    # B2.11/B2.12 fail-closed: unknown emails are 401, never auto-citizen.
     response = client.post("/api/v1/auth/login", json={"email": "ramesh@example.com", "password": "x"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["role"] == "citizen"
-    assert body["access_token"]
+    assert response.status_code == 401
 
 
 def test_login_requires_password(client):
