@@ -129,4 +129,14 @@ export const getServiceHealth = () => api.get('/admin/health/services');
 export const getIndustryImpact = () => api.get('/industry/impact');
 export const exportMonthlyMatrix = () => api.post('/industry/exports/monthly-matrix');
 
+// --- public Reports Feed (/feed): browse free, act with a citizen account ---
+export const getFeed = (params) => api.get('/feed', { params });
+export const getFeedMediaList = (problemId) => api.get(`/feed/${problemId}/media`);
+export const feedMediaUrl = (assetId) => `${baseURL}/feed/media/${assetId}`;
+export const getFeedComments = (problemId) => api.get(`/feed/${problemId}/comments`);
+export const postFeedComment = (problemId, data) => api.post(`/feed/${problemId}/comments`, data);
+export const meTooReport = (problemId) => api.post(`/feed/${problemId}/me-too`);
+export const withdrawMeToo = (problemId) => api.delete(`/feed/${problemId}/me-too`);
+export const confirmReport = (problemId) => api.post(`/feed/${problemId}/confirm`);
+
 export default api;
