@@ -6,6 +6,7 @@ import Footer from './components/Footer';
 import LandingPage from './components/LandingPage';
 import LiveTrackingCard from './components/LiveTrackingCard';
 import TrackLanding from './components/TrackLanding';
+import FeedPage from './components/FeedPage';
 import HowItWorks from './components/HowItWorks';
 import Impact from './components/Impact';
 import About from './components/About';
@@ -60,6 +61,7 @@ export default function App() {
             <Routes>
               {/* Public surface — no login, fast on 3G */}
               <Route path="/" element={<LandingPage />} />
+              <Route path="/feed" element={<FeedPage />} />
               <Route path="/track" element={<TrackLanding />} />
               <Route path="/track/:token" element={<LiveTrackingCard />} />
               <Route path="/how-it-works" element={<HowItWorks />} />

@@ -4,6 +4,7 @@ import { Menu, X, Search, ChevronDown, LogOut, LayoutDashboard, FolderOpen } fro
 import { useAuth } from '../lib/auth';
 
 const NAV = [
+  { to: '/feed', label: 'Reports' },
   { to: '/how-it-works', label: 'How it works' },
   { to: '/impact', label: 'Impact' },
   { to: '/about', label: 'About' },

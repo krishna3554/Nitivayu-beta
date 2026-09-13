@@ -382,3 +382,42 @@ class ReportLike(Base):
 
     __table_args__ = (UniqueConstraint('problem_id', 'voter_key', name='uq_report_likes_voter'),)
 
+
+class ReportConfirmation(Base):
+    """Third-party "confirm" on a public-feed report — "I have seen this
+    issue firsthand nearby", NOT "I also suffer from it".
+
+    Weighted differently from me-too by design: confirmations never boost
+    severity (no crowd-inflation of triage priority); at >=2 they mark the
+    report community-corroborated (audit CROWD_CONFIRMED) for dedup weight.
+    Same voter identity + one-per-citizen uniqueness as ReportLike.
+    """
+    __tablename__ = 'report_confirmations'
+
+    confirmation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    problem_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('problems.problem_id', ondelete='CASCADE'), nullable=False, index=True)
+    voter_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (UniqueConstraint('problem_id', 'voter_key', name='uq_report_confirmations_voter'),)
+
+
+class ReportComment(Base):
+    """Moderated threaded comment on a public-feed report.
+
+    status: visible | hidden (profanity/spam filter or officer moderation).
+    parent_id enables one level of threading (reply); NULL = top-level.
+    Author identity is the citizen account (user_id string + display name);
+    anonymous posting is rejected — read is free, acting needs an account.
+    """
+    __tablename__ = 'report_comments'
+
+    comment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    problem_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('problems.problem_id', ondelete='CASCADE'), nullable=False, index=True)
+    author_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    author_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('report_comments.comment_id', ondelete='CASCADE'), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='visible')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
