@@ -94,6 +94,7 @@ It operates on a **dual-cadence**:
 8. **Compliance by default:** `/output/{triage,sla,reports,audit,csr,media}` generates `Nitivayu_*` BOM CSV, append-only SLA CSV, weekly PDF, immutable JSONL, monthly XLSX (plus S3 copy when enabled).
 9. **Scale-ready UI:** workspace code-splitting (`React.lazy` per workspace), `RequireWorkspace` guards, `lib/meta` shared pipeline constants, keyboard shortcuts (`j/k/a/r/x`); optimistic updates; live telemetry dashboard + Prometheus/Grafana.
 10. **Continuous learning flywheel (live):** Monthly workflow audits officer overrides, recomputes theme centroids, applies seasonal weights, runs CSR matching, exports XLSX — verified by live manual run (see `plan4.md` §1.1 B2).
+11. **Public civic signal, safely:** the Reports Feed exposes only post-extraction reports and clean evidence. Citizens can add account-bound “me too” and confirmation signals, while moderated comments support local context without turning grievances into a social feed.
 
 ---
 
@@ -166,7 +167,13 @@ It operates on a **dual-cadence**:
 - **Reporter notifications (live):** `services/notify_reporter.py` — Gmail SMTP + Twilio/MSG91 SMS, verified by real delivery; log-only when hosts/keys are empty. Opt-in contacts get backgrounded updates on submitted / approved / rejected / overridden / accepted / declined / milestones. `services/notify.py` covers identity OTP + admin invites.
 - **Media pipeline:** `MediaProcessingWorkflow` (scan → normalize → transcribe) runs async on upload; `MediaAsset` rows (`pending/flagged/clean`); MinIO/S3 (`S3_ENABLED`) or local `MEDIA_DIR` mirror; first photo doubles as legacy `photo_url`. `ASR_ENABLED=false` and `MODERATION_ENABLED=false` are honest stubs by design (see `plan4.md` B10).
 - **Realtime events:** `routes/events.py` SSE (`GET /events/stream?token=`) on channels `track:{token}`, `public`, `org:{id}`, `role:{role}`; Redis fan-out; tracker is SSE-first with polling fallback.
-- **Reports:** `activities/report_gen.py` + `services/outputs.py` generate IO-spec files (see §13). Feed (`/feed/*`) + casefile (`/casefile/*`) expose public activity and evidence.
+- **Reports:** `activities/report_gen.py` + `services/outputs.py` generate IO-spec files (see §13). Casefiles (`/casefile/*`) expose public activity and evidence.
+
+### 4.9 Public Reports Feed (`/feed`)
+- **Browse without an account:** newest-first, paginated community reports with district, category, and lifecycle filters; “Near me” orders by the browser-provided location. Infinite scroll has a manual load-more fallback.
+- **Privacy and safety gate:** reports are visible only after extraction, which redacts intake PII. Raw intake states (`INGESTED`, `PENDING_TRIAGE`, `TRIAGING`) and rejected/merged/duplicate reports never appear. The feed shows an anonymized reporter byline, district/block (never exact GPS or contacts), and only `clean`-moderated photos or audio.
+- **Civic engagement, not generic reactions:** signed-in citizens can mark “me too” once per report, confirm firsthand observation once, and add moderated threaded comments. Three “me too” signals increase a sub-5 severity by one with a `CROWD_SEVERITY_BOOST` audit entry; two confirmations mark the report community-corroborated without changing severity (`CROWD_CONFIRMED`).
+- **Shareable status:** each card can copy its public tracker link (`/track/:token`), displays progress and matching-university context, and carries an officer-verification trust strip once routed.
 
 ---
 
@@ -432,7 +439,13 @@ Base: `http://localhost:8000/api/v1` (Swagger at `/8000/docs`). Routers: `auth, 
 | `GET /api/v1/industry/pledges` | industry | — | `{pledges[], total_pledged_inr, projects_funded}` |
 | `GET /api/v1/industry/impact` + `POST /industry/exports/monthly-matrix` | industry | — | impact page + XLSX matrix |
 | `GET /api/v1/events/stream?token=` | token query (EventSource) | channels `track:/public:/org:/role:` | SSE stream with polling fallback |
-| `GET /api/v1/feed/*` + `/casefile/*` + `GET /media/{asset_id}` | mixed | — | public feed, casefiles, evidence blobs (officer-cleared) |
+| `GET /api/v1/feed` | no | `skip`, `limit`, `district?`, `category?`, `status?`, `near_lat?`, `near_lng?` | paginated post-extraction public reports, engagement counts, and clean-media summary |
+| `GET /api/v1/feed/{problem_id}/media` + `GET /api/v1/feed/media/{asset_id}` | no | — | clean evidence listing and a clean photo/audio asset only |
+| `GET /api/v1/feed/{problem_id}/comments` | no | — | visible moderated comment thread |
+| `POST/DELETE /api/v1/feed/{problem_id}/me-too` + `POST /api/v1/feed/{problem_id}/confirm` | citizen/admin | — | add/remove one account-bound same-issue signal or add one firsthand confirmation |
+| `POST /api/v1/feed/{problem_id}/comments` | citizen/admin | `{body, parent_id?}` | creates a moderated comment (max 1,000 characters) |
+| `POST /api/v1/feed/{problem_id}/like` | optional | `{voter_key?}` | legacy anonymous like toggle (backward compatibility) |
+| `GET /api/v1/casefile/*` + `GET /media/{asset_id}` | mixed | — | public casefiles and role-checked evidence blobs |
 | `GET /api/v1/analytics/overview` | no (cached) | — | `{total_submissions, total_problems, triage_throughput, sla_compliance_percent, active_workers, total_pledged_inr, distributions}` |
 | `POST /api/v1/admin/reports/triage` | admin/officer | — | `{path, count}` (writes `/output/triage/*.csv`) |
 
@@ -449,6 +462,7 @@ Workspaces are lazy-loaded (`React.lazy` per workspace) with legacy redirects (`
 | Route | Component | Who / What |
 |---|---|---|
 | `/` | `LandingPage.jsx` | Hero, pipeline explainer, role entry points, live `public-stats/partners/featured-cases` |
+| `/feed` | `FeedPage.jsx` | Public Reports Feed: filters, Near-me ordering, infinite scroll, clean-evidence lightbox, shareable tracker links, and citizen-only civic engagement |
 | `/track`, `/track/:token` | `TrackLanding.jsx`, `LiveTrackingCard.jsx` | Token entry + public SSE-first timeline + university + milestones + updates |
 | `/how-it-works`, `/impact`, `/about` | `HowItWorks.jsx`, `Impact.jsx`, `About.jsx` | Live docs (no fabricated scores; empty-state when none) |
 | `/login`, `/signup` | `Login.jsx`, `Signup.jsx`, `OAuthButtons.jsx` | Email+password + OTP + Google OAuth; `DEMO_MODE` demo accounts |
@@ -514,7 +528,7 @@ Nitivayu-beta/
 │   ├── scripts/{init_db.sql (+migrations), seed_data.py} + tests/{test_api, test_auth, test_batch, test_casefile, test_feed, test_notify, test_outputs, test_plan4, test_seed_data, test_temporal_pipeline}
 ├── frontend/
 │   ├── Dockerfile, nginx.conf, vite.config.js, tailwind/postcss, package.json
-│   └── src/{App.jsx (workspaces + legacy redirects), main.jsx, index.css, lib/{auth, meta, motion}, services/api.js, styles/tokens.css, app/{citizen/*, officer/* (+ReviewDetail), university/* (+AssignmentDetail), corporate/*, admin/*}, components/{LandingPage, TrackLanding, LiveTrackingCard, HowItWorks, Impact, About, Login, Signup, OAuthButtons, Navbar, Footer, OfficerReviewQueue, BatchTriageControl, ScalabilityDashboard, CasefileBits, ui/*}}
+│   └── src/{App.jsx (workspaces + legacy redirects), main.jsx, index.css, lib/{auth, meta, motion}, services/api.js, styles/tokens.css, app/{citizen/*, officer/* (+ReviewDetail), university/* (+AssignmentDetail), corporate/*, admin/*}, components/{LandingPage, FeedPage, TrackLanding, LiveTrackingCard, HowItWorks, Impact, About, Login, Signup, OAuthButtons, Navbar, Footer, OfficerReviewQueue, BatchTriageControl, ScalabilityDashboard, CasefileBits, ui/*}}
 └── output/{triage, sla, reports, audit, csr, media}/
 ```
 

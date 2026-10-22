@@ -202,7 +202,7 @@ services:
   # 7. MinIO — S3-compatible object storage for photos/audio/exports (§5.2).
   # The backend auto-creates the bucket on startup; no bootstrap container.
   minio:
-    image: minio/minio:latest
+    image: pgsty/silo:RELEASE.2026-10-18T00-00-00Z
     container_name: nitivayu-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -215,7 +215,7 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "silo", "healthcheck", "ready"]
       interval: 10s
       timeout: 5s
       retries: 5
