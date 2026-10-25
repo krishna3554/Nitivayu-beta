@@ -1,0 +1,55 @@
+Welcome to Nitivayu, a civic intelligence platform that turns local problems into accountable, research-ready projects.
+
+This demonstration follows the complete journey of a civic report, from citizen intake to triage, officer review, university action, community engagement, funding, and measurable completion.
+
+We begin on the public landing page. The platform explains the complete pipeline and provides separate experiences for citizens, officers, universities, industry partners, and administrators.
+
+A citizen starts by opening the report form. The form accepts Hindi, Hinglish, or English descriptions. The citizen can choose a district and block, add a location, attach photographs or audio, and optionally provide contact details for updates.
+
+For this demonstration, imagine a school handpump in Garhwa producing yellow, fluoride-contaminated water. The citizen describes the problem, selects the district, adds evidence, and submits the report.
+
+After submission, Nitivayu creates a tracking token. This token lets the citizen follow progress without exposing private information. The citizen can save the token or open the public tracking link immediately.
+
+The Reports Feed provides a public view of eligible reports. It is privacy-safe by design. Raw intake states, rejected reports, duplicates, exact GPS coordinates, and private contacts are not shown. Only extracted reports and clean, moderated evidence appear here.
+
+The community can participate without turning the platform into a social network. A signed-in citizen can mark Me Too, confirm a firsthand observation, and add a moderated comment. These signals support corroboration and can increase confidence in a serious issue.
+
+Next, we sign in as an officer. The officer queue contains reports that need a human decision. Each card shows the extracted title, summary, category, severity, district, evidence, and SLA countdown.
+
+The platform processes each submission through a durable Temporal workflow. The workflow extracts the important facts, classifies the issue, creates a multilingual embedding, checks for similar reports, and ranks suitable universities.
+
+The routing recommendation is explainable. The officer can see semantic similarity, theme match, available capacity, and geographic fit. This makes the recommendation reviewable instead of a black-box decision.
+
+The officer can approve, reject, override the recommended university, or escalate the case. We approve this water challenge. The problem now moves from officer review to routed, and a university assignment is created.
+
+The officer SLA is seventy-two hours. If the decision is not made in time, the case can be escalated. Every decision, override, status change, and review is recorded in the audit history.
+
+Now we switch to the university workspace. The university sees only assignments belonging to its own organization. The BIT Mesra team opens the Garhwa challenge, reviews the evidence and routing context, and accepts the assignment.
+
+Acceptance creates a project team and three milestones: M1, M2, and M3. The team can add a faculty mentor, student lead, proposal title, and supporting project information.
+
+The university team posts a plain-language progress update. For example, the team can explain that it completed a water-quality survey and selected three handpumps for pilot testing.
+
+The team submits milestone evidence. A submitted milestone is not automatically considered complete. An officer must review the evidence and verify it. This creates a second accountability gate.
+
+When the officer verifies M1, the milestone changes from submitted to verified. The same process can be repeated for M2 and M3. Verifying M3 completes the project and releases the university capacity.
+
+The citizen tracker turns these internal actions into an understandable public timeline. The timeline shows ingestion, AI triage, officer review, routing, university acceptance, milestone progress, updates, verification, and completion.
+
+The tracker also shows the matched university, the current milestone, recent project updates, and an officer-verification trust indicator. It uses server-sent events with a polling fallback so the status remains useful even when a live connection is interrupted.
+
+Next, we switch to an industry or CSR account. CSR partners can browse validated opportunities by category and district. They can see the assigned university, project confidence, and existing pledged amount.
+
+Tata Steel can pledge funding to the Garhwa project. The pledge is linked to the real challenge and, when available, to the project team. The industry workspace shows the pledge portfolio, total pledged amount, and impact information.
+
+The monthly funding matrix connects project needs with CSR focus areas and produces a spreadsheet export for follow-up and compliance.
+
+Finally, we open the administrator workspace. Administrators can see total submissions, active problems, triage throughput, SLA compliance, active universities, pledged funding, and distributions by category, district, and severity.
+
+The service-health view checks the database, Temporal, Redis, and object storage. Compliance exports include triage reports, SLA logs, audit records, weekly reports, CSR spreadsheets, and media outputs.
+
+Nitivayu also exposes operational tools. Temporal shows durable workflow executions. Prometheus collects service metrics, and Grafana provides dashboards for monitoring the running platform.
+
+The complete journey is now visible: a citizen reports a local issue, AI structures and routes it, an officer makes the accountable decision, a university team delivers milestones, a CSR partner supports the work, and the citizen can follow the result.
+
+Nitivayu is more than a ticketing system. It is a traceable path from civic voice to verified, funded, and measurable impact.
